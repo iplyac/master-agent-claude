@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pytest:*)",
+      "Bash(python3:*)",
+      "Bash(gcloud auth:*)",
+      "Bash(gcloud config:*)",
+      "Bash(gcloud secrets describe:*)",
+      "Bash(gcloud secrets list:*)",
+      "Bash(bash:*)",
+      "Bash(curl:*)",
+      "Bash(gcloud logging read:*)",
+      "Bash(openspec new:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec instructions proposal:*)",
+      "Bash(openspec instructions design:*)",
+      "Bash(openspec instructions specs:*)",
+      "Bash(openspec instructions tasks:*)",
+      "Bash(openspec instructions apply:*)"
+    ]
+  }
+}
