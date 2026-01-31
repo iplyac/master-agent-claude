@@ -1,54 +1,50 @@
 # Интеграция с Telegram Bot
 
-Этот документ описывает как telegram-bot будет обращаться к master-agent.
+Этот документ описывает как telegram-bot обращается к master-agent.
 
 ## Обзор
 
 ```
 ┌─────────────────┐                     ┌─────────────────┐
-│  telegram-bot   │───Internal DNS────▶ │  master-agent   │
+│  telegram-bot   │───public HTTPS────▶ │  master-agent   │
 │  (Cloud Run)    │                     │  (Cloud Run)    │
 └─────────────────┘                     └─────────────────┘
         │                                       │
-        │ VPC Egress                            │ Ingress: internal
-        └───────────────── VPC ─────────────────┘
+        │ AGENT_API_URL env var                 │ ingress: all
+        └───────────────────────────────────────┘
 ```
+
+## Текущая конфигурация
+
+| Сервис | Настройка | Значение |
+|--------|-----------|----------|
+| master-agent | Service name | `master-agent` |
+| master-agent | Region | `europe-west4` |
+| master-agent | Ingress | `all` (публично доступен) |
+| master-agent | URL | `https://master-agent-3qblthn7ba-ez.a.run.app` |
+| telegram-bot | AGENT_API_URL | URL master-agent |
 
 ## Требования к master-agent
 
-### 1. Имя сервиса (КРИТИЧНО!)
+### 1. Имя сервиса
 
-Telegram-bot использует Internal Cloud Run DNS для обнаружения master-agent.
-URL формируется как:
+Service name MUST быть `master-agent`.
 
-```
-https://master-agent.{region}.run.internal
-```
-
-**Требуется изменить SERVICE_NAME в `deploy-agent.sh`:**
-
+В `deploy-agent.sh`:
 ```bash
-# Было:
-SERVICE_NAME="${SERVICE_NAME:-ai-agent}"
-
-# Должно быть:
 SERVICE_NAME="${SERVICE_NAME:-master-agent}"
 ```
 
 ### 2. Ingress настройки
 
-Для работы через Internal DNS, master-agent должен принимать internal traffic.
+Ingress MUST быть `all` для публичного доступа.
 
-**Добавить в `gcloud run deploy`:**
-
+В `gcloud run deploy`:
 ```bash
-gcloud run deploy "${SERVICE_NAME}" \
-    ...
-    --ingress=internal \    # ← добавить
-    ...
+--ingress=all
 ```
 
-Или через консоль: Cloud Run → master-agent → Security → Ingress → "Internal"
+Или через Console: Cloud Run → master-agent → Security → Ingress → "All"
 
 ### 3. API Endpoints
 
@@ -109,61 +105,46 @@ Telegram-bot использует следующие endpoints:
 }
 ```
 
-### 4. Region
+## Почему НЕ используется Internal DNS
 
-Оба сервиса должны быть в одном регионе для работы Internal DNS.
+Cloud Run **НЕ поддерживает** нативный internal DNS (`.run.internal`).
 
-| Сервис | Текущий регион |
-|--------|----------------|
-| telegram-bot | `europe-west4` |
-| master-agent | `europe-west4` ✓ |
+Формат `https://service.region.run.internal` — это конвенция из community-проекта [runsd](https://github.com/ahmetb/runsd), а не официальная функция Google Cloud.
 
-## Изменения в deploy-agent.sh
+Для настоящего internal networking требуется [Private Service Connect](https://cloud.google.com/run/docs/securing/private-networking), что значительно сложнее.
 
-```diff
---- a/deploy-agent.sh
-+++ b/deploy-agent.sh
-@@ -4,7 +4,7 @@ set -euo pipefail
+**Текущее решение:** публичный URL с HTTPS. Это безопасно — Cloud Run обеспечивает TLS.
 
- # --- Configuration ---
- PROJECT_ID="${PROJECT_ID:-gen-lang-client-0741140892}"
--SERVICE_NAME="${SERVICE_NAME:-ai-agent}"
-+SERVICE_NAME="${SERVICE_NAME:-master-agent}"
- REGION="${REGION:-europe-west4}"
- DOCKER_REGISTRY="${DOCKER_REGISTRY:-gcr.io}"
- LOG_LEVEL="${LOG_LEVEL:-INFO}"
-@@ -76,6 +76,7 @@ gcloud run deploy "${SERVICE_NAME}" \
-     --region="${REGION}" \
-     --image="${IMAGE_LATEST}" \
-     --platform=managed \
-+    --ingress=internal \
-     --allow-unauthenticated \
-     --set-env-vars="${ENV_VARS}" \
-     --set-secrets="MODEL_API_KEY=GOOGLE_API_KEY:latest" \
+## Безопасность (TODO)
+
+Сейчас master-agent публично доступен. Варианты защиты:
+
+1. **IAM authentication** — Cloud Run проверяет identity вызывающего сервиса
+2. **API Key** — shared secret в headers
+3. **Private Service Connect** — полностью приватная сеть
+
+## Деплой
+
+### Telegram-bot
+
+```bash
+AGENT_API_URL=https://master-agent-3qblthn7ba-ez.a.run.app ./deploy-bot.sh
+```
+
+### Master-agent
+
+```bash
+SERVICE_NAME=master-agent ./deploy-agent.sh
 ```
 
 ## Проверка интеграции
 
-После деплоя обоих сервисов:
-
 ```bash
-# 1. Проверить что master-agent доступен по internal DNS
-# (выполнить из контейнера telegram-bot или Cloud Shell в том же VPC)
-curl https://master-agent.europe-west4.run.internal/health
+# Health check
+curl https://master-agent-3qblthn7ba-ez.a.run.app/health
 
-# 2. Проверить chat endpoint
-curl -X POST https://master-agent.europe-west4.run.internal/api/chat \
+# Chat endpoint
+curl -X POST https://master-agent-3qblthn7ba-ez.a.run.app/api/chat \
   -H "Content-Type: application/json" \
   -d '{"session_id": "test", "message": "ping"}'
 ```
-
-## Fallback
-
-Если VPC не настроен, telegram-bot может использовать env var:
-
-```bash
-# В deploy-bot.sh или через Console
-AGENT_API_URL=https://master-agent-xxx-ew4.a.run.app
-```
-
-Но рекомендуется настроить VPC для Internal DNS.

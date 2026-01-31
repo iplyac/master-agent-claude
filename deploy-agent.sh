@@ -78,7 +78,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region="${REGION}" \
     --image="${IMAGE_LATEST}" \
     --platform=managed \
-    --ingress=internal \
+    --ingress=all \
     --allow-unauthenticated \
     --set-env-vars="${ENV_VARS}" \
     --set-secrets="MODEL_API_KEY=GOOGLE_API_KEY:latest" \
