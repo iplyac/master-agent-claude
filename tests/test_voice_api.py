@@ -1,22 +1,31 @@
 """Tests for voice API endpoint."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
 from httpx import ASGITransport, AsyncClient
 
-from app import app
-from agent.llm_client import LLMClient
-from agent.processor import MessageProcessor
+
+@pytest.fixture
+def mock_processor():
+    """Create a mock MessageProcessor."""
+    from agent.processor import MessageProcessor
+
+    processor = MagicMock(spec=MessageProcessor)
+    processor.process = AsyncMock(return_value="Hello from AI!")
+    processor.process_voice = AsyncMock(
+        return_value={"response": "Test response", "transcription": "Test transcription"}
+    )
+    return processor
 
 
-@pytest.fixture(autouse=True)
-def setup_app_state():
-    """Set up app.state with LLMClient and MessageProcessor for tests."""
-    llm_client = LLMClient(api_key=None, model_name="gemini-2.0-flash-exp")
-    processor = MessageProcessor(llm_client)
-    app.state.llm_client = llm_client
-    app.state.processor = processor
-    yield
+@pytest.fixture
+def app_with_mocks(mock_processor):
+    """Create app with mocked components."""
+    from app import app
+
+    app.state.processor = mock_processor
+    return app
 
 
 @pytest.fixture
@@ -25,58 +34,31 @@ def anyio_backend():
 
 
 @pytest.mark.asyncio
-async def test_voice_endpoint_valid_contract():
+async def test_voice_endpoint_valid_contract(app_with_mocks, mock_processor):
     """POST /api/voice with valid data should return response and transcription."""
-    with patch.object(
-        app.state.processor.llm_client,
-        "generate_response_from_audio",
-        new_callable=AsyncMock,
-    ) as mock_gen:
-        mock_gen.return_value = {
-            "response": "Test response",
-            "transcription": "Test transcription",
-        }
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/voice",
-                json={
-                    "session_id": "tg_123456",
-                    "audio_base64": "dGVzdCBhdWRpbyBkYXRh",
-                    "mime_type": "audio/ogg",
-                },
-            )
-        assert response.status_code == 200
-        data = response.json()
-        assert "response" in data
-        assert "transcription" in data
-        assert data["response"] == "Test response"
-        assert data["transcription"] == "Test transcription"
-
-
-@pytest.mark.asyncio
-async def test_voice_endpoint_missing_api_key():
-    """Voice endpoint with no API key should return configured error message."""
-    app.state.llm_client.api_key = None
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app_with_mocks)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/voice",
             json={
                 "session_id": "tg_123456",
-                "audio_base64": "dGVzdA==",
+                "audio_base64": "dGVzdCBhdWRpbyBkYXRh",
                 "mime_type": "audio/ogg",
             },
         )
     assert response.status_code == 200
     data = response.json()
-    assert "not configured" in data.get("response", "").lower()
+    assert "response" in data
+    assert "transcription" in data
+    assert data["response"] == "Test response"
+    assert data["transcription"] == "Test transcription"
+    mock_processor.process_voice.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_voice_endpoint_missing_audio():
+async def test_voice_endpoint_missing_audio(app_with_mocks):
     """Voice endpoint with missing audio should return 400."""
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app_with_mocks)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/voice",
@@ -90,9 +72,9 @@ async def test_voice_endpoint_missing_audio():
 
 
 @pytest.mark.asyncio
-async def test_voice_endpoint_missing_session_id():
+async def test_voice_endpoint_missing_session_id(app_with_mocks):
     """Voice endpoint with missing session_id should return 400."""
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app_with_mocks)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/voice",
@@ -105,9 +87,9 @@ async def test_voice_endpoint_missing_session_id():
 
 
 @pytest.mark.asyncio
-async def test_voice_endpoint_invalid_json():
+async def test_voice_endpoint_invalid_json(app_with_mocks):
     """Voice endpoint with invalid JSON should return 400."""
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app_with_mocks)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/voice",
@@ -119,23 +101,18 @@ async def test_voice_endpoint_invalid_json():
 
 
 @pytest.mark.asyncio
-async def test_voice_endpoint_timeout():
-    """Voice endpoint timeout should return 500."""
-    with patch.object(
-        app.state.processor.llm_client,
-        "generate_response_from_audio",
-        new_callable=AsyncMock,
-    ) as mock_gen:
-        mock_gen.side_effect = RuntimeError("Timeout")
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/voice",
-                json={
-                    "session_id": "tg_123456",
-                    "audio_base64": "dGVzdA==",
-                    "mime_type": "audio/ogg",
-                },
-            )
-        assert response.status_code == 500
-        assert "unavailable" in response.json().get("error", "").lower()
+async def test_voice_endpoint_error_handling(app_with_mocks, mock_processor):
+    """Voice endpoint error should return 500."""
+    mock_processor.process_voice.side_effect = RuntimeError("Processing failed")
+    transport = ASGITransport(app=app_with_mocks)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/voice",
+            json={
+                "session_id": "tg_123456",
+                "audio_base64": "dGVzdA==",
+                "mime_type": "audio/ogg",
+            },
+        )
+    assert response.status_code == 500
+    assert "unavailable" in response.json().get("error", "").lower()

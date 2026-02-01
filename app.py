@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -7,6 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pythonjsonlogger import jsonlogger
 
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+
+from agent.adk_agent import create_agent
+from agent.adk_session_service import FirestoreSessionService
 from agent.config import (
     get_log_level,
     get_model_api_key,
@@ -18,10 +24,9 @@ from agent.config import (
     get_service_name,
     mask_token,
 )
-from agent.conversation_store import ConversationStore, ConversationStoreError
-from agent.llm_client import LLMClient
 from agent.models import ChatRequest, VoiceRequest
 from agent.processor import MessageProcessor
+from agent.voice_client import VoiceClient
 
 # Cloud Trace context variable
 trace_context: ContextVar[str] = ContextVar("trace_context", default="")
@@ -71,7 +76,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage LLM client lifecycle."""
+    """Manage ADK components lifecycle."""
     # --- Startup ---
     project_id = get_project_id()
     log_level = get_log_level()
@@ -93,19 +98,42 @@ async def lifespan(app: FastAPI):
         api_key is not None,
     )
 
-    llm_client = LLMClient(api_key, model_name, endpoint)
-    conversation_store = ConversationStore(project_id)
-    processor = MessageProcessor(llm_client, conversation_store)
+    # Create ADK components
+    agent = create_agent(model_name=model_name)
 
-    app.state.llm_client = llm_client
+    # Use InMemorySessionService for local testing, FirestoreSessionService in production
+    use_in_memory = os.environ.get("USE_IN_MEMORY_SESSION", "").lower() in ("true", "1", "yes")
+    if use_in_memory:
+        logger.info("Using InMemorySessionService (local testing mode)")
+        session_service = InMemorySessionService()
+    else:
+        session_service = FirestoreSessionService(project_id)
+
+    runner = Runner(
+        app_name="master_agent",
+        agent=agent,
+        session_service=session_service,
+    )
+
+    # Create voice client for audio processing (uses direct Gemini API)
+    voice_client = VoiceClient(api_key, model_name, endpoint)
+
+    # Create processor with ADK Runner
+    processor = MessageProcessor(runner, session_service, voice_client)
+
+    # Store in app state
+    app.state.runner = runner
+    app.state.session_service = session_service
     app.state.processor = processor
-    app.state.conversation_store = conversation_store
+    app.state.voice_client = voice_client
 
     yield
 
     # --- Shutdown ---
     logger.info("Shutting down %s", service_name)
-    await llm_client.close()
+    await voice_client.close()
+    if hasattr(session_service, "close"):
+        await session_service.close()
 
 
 app = FastAPI(lifespan=lifespan)

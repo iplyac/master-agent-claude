@@ -1,3 +1,5 @@
+"""Voice message processing client using Gemini multimodal API."""
+
 import logging
 from typing import Optional
 
@@ -10,8 +12,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
-class LLMClient:
-    """Client for calling Gemini (or compatible) LLM API via httpx."""
+class VoiceClient:
+    """Client for processing voice messages via Gemini multimodal API."""
 
     def __init__(
         self,
@@ -19,89 +21,30 @@ class LLMClient:
         model_name: str,
         endpoint: Optional[str] = None,
     ):
+        """Initialize the voice client.
+
+        Args:
+            api_key: Gemini API key.
+            model_name: Model name to use.
+            endpoint: API endpoint URL.
+        """
         self.api_key = api_key
         self.model_name = model_name
         self.endpoint = endpoint or DEFAULT_ENDPOINT
         self.client = httpx.AsyncClient(timeout=25.0)
 
-    async def generate_response(
-        self,
-        message: str,
-        session_id: str,
-        history: list[dict] | None = None,
-    ) -> str:
-        """Send message to LLM and return text response."""
-        if self.api_key is None:
-            return "AI model not configured. Please contact administrator."
-
-        url = f"{self.endpoint}/{self.model_name}:generateContent"
-        params = {"key": self.api_key}
-
-        # Build contents with history
-        contents = []
-        if history:
-            contents.extend(history)
-        contents.append({"role": "user", "parts": [{"text": message}]})
-
-        body = {"contents": contents}
-
-        logger.info(
-            "LLM request: session_id=%s, message_length=%d, history_turns=%d, model=%s",
-            session_id,
-            len(message),
-            len(history) if history else 0,
-            self.model_name,
-        )
-
-        try:
-            response = await self.client.post(
-                url,
-                params=params,
-                json=body,
-                headers={"Content-Type": "application/json"},
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-            logger.info(
-                "LLM response: session_id=%s, response_length=%d",
-                session_id,
-                len(text),
-            )
-            return text
-
-        except httpx.TimeoutException as e:
-            error_msg = mask_token(str(e))
-            logger.error("LLM timeout: session_id=%s, error=%s", session_id, error_msg)
-            raise RuntimeError(f"LLM request timed out: {error_msg}") from e
-        except httpx.HTTPStatusError as e:
-            error_msg = mask_token(str(e))
-            logger.error(
-                "LLM HTTP error: session_id=%s, status=%d, error=%s",
-                session_id,
-                e.response.status_code,
-                error_msg,
-            )
-            raise RuntimeError(f"LLM API error: {error_msg}") from e
-        except Exception as e:
-            error_msg = mask_token(str(e))
-            logger.error("LLM error: session_id=%s, error=%s", session_id, error_msg)
-            raise RuntimeError(f"LLM error: {error_msg}") from e
-
     async def generate_response_from_audio(
         self, audio_base64: str, mime_type: str, session_id: str
     ) -> dict:
-        """
-        Send audio to Gemini multimodal API for transcription + response.
+        """Send audio to Gemini multimodal API for transcription + response.
 
         Args:
-            audio_base64: Base64-encoded audio bytes
-            mime_type: Audio MIME type (e.g., "audio/ogg")
-            session_id: Session ID for logging
+            audio_base64: Base64-encoded audio bytes.
+            mime_type: Audio MIME type (e.g., "audio/ogg").
+            session_id: Session ID for logging.
 
         Returns:
-            dict with keys: "response", "transcription"
+            dict with keys: "response", "transcription".
         """
         if self.api_key is None:
             return {
@@ -138,7 +81,7 @@ class LLMClient:
 
         audio_size = len(audio_base64) * 3 // 4  # approximate decoded size
         logger.info(
-            "LLM voice request: session_id=%s, audio_size=%d, mime_type=%s, model=%s",
+            "Voice request: session_id=%s, audio_size=%d, mime_type=%s, model=%s",
             session_id,
             audio_size,
             mime_type,
@@ -159,7 +102,7 @@ class LLMClient:
             result = self._parse_voice_response(raw_text)
 
             logger.info(
-                "LLM voice response: session_id=%s, transcription_length=%d, response_length=%d",
+                "Voice response: session_id=%s, transcription_length=%d, response_length=%d",
                 session_id,
                 len(result["transcription"]),
                 len(result["response"]),
@@ -168,26 +111,26 @@ class LLMClient:
 
         except httpx.TimeoutException as e:
             error_msg = mask_token(str(e))
-            logger.error("LLM voice timeout: session_id=%s, error=%s", session_id, error_msg)
-            raise RuntimeError(f"LLM request timed out: {error_msg}") from e
+            logger.error("Voice timeout: session_id=%s, error=%s", session_id, error_msg)
+            raise RuntimeError(f"Voice request timed out: {error_msg}") from e
         except httpx.HTTPStatusError as e:
             error_msg = mask_token(str(e))
             logger.error(
-                "LLM voice HTTP error: session_id=%s, status=%d, error=%s",
+                "Voice HTTP error: session_id=%s, status=%d, error=%s",
                 session_id,
                 e.response.status_code,
                 error_msg,
             )
-            raise RuntimeError(f"LLM API error: {error_msg}") from e
+            raise RuntimeError(f"Voice API error: {error_msg}") from e
         except Exception as e:
             error_msg = mask_token(str(e))
-            logger.error("LLM voice error: session_id=%s, error=%s", session_id, error_msg)
-            raise RuntimeError(f"LLM error: {error_msg}") from e
+            logger.error("Voice error: session_id=%s, error=%s", session_id, error_msg)
+            raise RuntimeError(f"Voice error: {error_msg}") from e
 
     @staticmethod
     def _parse_voice_response(raw_text: str) -> dict:
-        """
-        Parse Gemini response containing [TRANSCRIPTION] and [RESPONSE] markers.
+        """Parse Gemini response containing [TRANSCRIPTION] and [RESPONSE] markers.
+
         Falls back to using full text as response if markers not found.
         """
         transcription = ""
