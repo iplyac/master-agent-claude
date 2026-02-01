@@ -18,7 +18,9 @@ from agent.config import (
     get_service_name,
     mask_token,
 )
+from agent.conversation_store import ConversationStore, ConversationStoreError
 from agent.llm_client import LLMClient
+from agent.models import ChatRequest, VoiceRequest
 from agent.processor import MessageProcessor
 
 # Cloud Trace context variable
@@ -92,10 +94,12 @@ async def lifespan(app: FastAPI):
     )
 
     llm_client = LLMClient(api_key, model_name, endpoint)
-    processor = MessageProcessor(llm_client)
+    conversation_store = ConversationStore(project_id)
+    processor = MessageProcessor(llm_client, conversation_store)
 
     app.state.llm_client = llm_client
     app.state.processor = processor
+    app.state.conversation_store = conversation_store
 
     yield
 
@@ -141,22 +145,41 @@ async def chat(request: Request):
             content={"error": "Invalid JSON"},
         )
 
-    session_id = body.get("session_id", "")
-    message = body.get("message", "")
-
-    if not session_id or not message:
+    try:
+        chat_request = ChatRequest(**body)
+    except ValueError as e:
         return JSONResponse(
             status_code=400,
-            content={"error": "session_id and message are required"},
+            content={"error": str(e)},
+        )
+
+    conversation_id = chat_request.get_conversation_id()
+    message = chat_request.message
+
+    if not message:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "message is required"},
+        )
+
+    # Log telegram metadata if present
+    if chat_request.metadata and chat_request.metadata.telegram:
+        tg = chat_request.metadata.telegram
+        logger.info(
+            "Chat request with Telegram metadata: conversation_id=%s, chat_id=%d, user_id=%d, chat_type=%s",
+            conversation_id,
+            tg.chat_id,
+            tg.user_id,
+            tg.chat_type,
         )
 
     try:
         processor: MessageProcessor = request.app.state.processor
-        response_text = await processor.process(session_id, message)
+        response_text = await processor.process(conversation_id, message)
         return {"response": response_text}
     except Exception as e:
         error_msg = mask_token(str(e))
-        logger.error("Chat error: session_id=%s, error=%s", session_id, error_msg)
+        logger.error("Chat error: conversation_id=%s, error=%s", conversation_id, error_msg)
         return JSONResponse(
             status_code=500,
             content={"error": "Agent unavailable, please try again later"},
@@ -170,9 +193,10 @@ async def voice(request: Request):
 
     Request JSON:
     {
-        "session_id": "tg_<user_id>",
+        "conversation_id": "tg_<chat_id>",
         "audio_base64": "<base64-encoded-audio>",
-        "mime_type": "audio/ogg"
+        "mime_type": "audio/ogg",
+        "metadata": {"telegram": {"chat_id": 123, "user_id": 456, "chat_type": "private"}}
     }
 
     Response JSON:
@@ -186,32 +210,51 @@ async def voice(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
 
-    session_id = body.get("session_id", "")
-    audio_base64 = body.get("audio_base64", "")
-    mime_type = body.get("mime_type", "audio/ogg")
-
-    if not session_id or not audio_base64:
+    try:
+        voice_request = VoiceRequest(**body)
+    except ValueError as e:
         return JSONResponse(
             status_code=400,
-            content={"error": "session_id and audio_base64 are required"},
+            content={"error": str(e)},
+        )
+
+    conversation_id = voice_request.get_conversation_id()
+    audio_base64 = voice_request.audio_base64
+    mime_type = voice_request.mime_type
+
+    if not audio_base64:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "audio_base64 is required"},
         )
 
     # Log request (without audio content)
     audio_size = len(audio_base64) * 3 // 4
     logger.info(
-        "Voice API request: session_id=%s, audio_size=%d, mime_type=%s",
-        session_id,
+        "Voice API request: conversation_id=%s, audio_size=%d, mime_type=%s",
+        conversation_id,
         audio_size,
         mime_type,
     )
 
+    # Log telegram metadata if present
+    if voice_request.metadata and voice_request.metadata.telegram:
+        tg = voice_request.metadata.telegram
+        logger.info(
+            "Voice request with Telegram metadata: conversation_id=%s, chat_id=%d, user_id=%d, chat_type=%s",
+            conversation_id,
+            tg.chat_id,
+            tg.user_id,
+            tg.chat_type,
+        )
+
     try:
         processor: MessageProcessor = request.app.state.processor
-        result = await processor.process_voice(session_id, audio_base64, mime_type)
+        result = await processor.process_voice(conversation_id, audio_base64, mime_type)
         return result
     except Exception as e:
         error_msg = mask_token(str(e))
-        logger.error("Voice API error: session_id=%s, error=%s", session_id, error_msg)
+        logger.error("Voice API error: conversation_id=%s, error=%s", conversation_id, error_msg)
         return JSONResponse(
             status_code=500,
             content={"error": "Agent unavailable, please try again later"},
