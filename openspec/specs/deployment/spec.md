@@ -1,22 +1,18 @@
-### Requirement: Service name for Internal DNS
+### Requirement: Service name
 
-Сервис SHALL деплоиться с именем `master-agent` для работы Internal Cloud Run DNS.
+Сервис SHALL деплоиться с именем `master-agent`.
 
-#### Scenario: Internal DNS resolution
-- **WHEN** telegram-bot обращается к `https://master-agent.europe-west4.run.internal`
-- **THEN** запрос маршрутизируется к master-agent сервису
+#### Scenario: Service naming
+- **WHEN** выполняется деплой
+- **THEN** сервис создается/обновляется с именем `master-agent`
 
-### Requirement: Internal ingress
+### Requirement: Public ingress
 
-Сервис SHALL принимать только internal traffic (из того же VPC).
+Сервис SHALL принимать публичный traffic (ingress=all).
 
-#### Scenario: Internal request accepted
-- **WHEN** запрос приходит из VPC через Internal DNS
+#### Scenario: Public request accepted
+- **WHEN** запрос приходит с любого IP
 - **THEN** сервис обрабатывает запрос
-
-#### Scenario: External request rejected
-- **WHEN** запрос приходит с публичного IP
-- **THEN** Cloud Run возвращает 403 Forbidden
 
 ### Requirement: Same region deployment
 
@@ -24,4 +20,4 @@
 
 #### Scenario: Regional colocation
 - **WHEN** оба сервиса в одном регионе
-- **THEN** Internal DNS работает корректно
+- **THEN** минимизируется latency между сервисами

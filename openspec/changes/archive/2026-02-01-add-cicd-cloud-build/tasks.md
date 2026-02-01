@@ -29,7 +29,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Сделать тестовый push: `git commit --allow-empty -m "Test CI/CD" && git push`
-- [ ] 5.2 Проверить билд: `gcloud builds list --limit=1`
-- [ ] 5.3 Проверить что сервис отвечает на health check
-- [ ] 5.4 Проверить что ручной деплой через `./deploy-agent.sh` работает
+- [x] 5.1 Сделать тестовый push: `git commit --allow-empty -m "Test CI/CD" && git push`
+- [x] 5.2 Проверить билд: `gcloud builds list --limit=1`
+- [x] 5.3 Проверить что сервис отвечает на health check
+- [x] 5.4 Проверить что ручной деплой через `./deploy-agent.sh` работает
