@@ -55,4 +55,4 @@
 - [x] 7.2 Test locally with curl: `/api/chat` endpoint
 - [x] 7.3 Verify conversation context persists between messages
 - [x] 7.4 Test `/api/voice` endpoint still works
-- [ ] 7.5 Deploy to staging and verify with Telegram bot
+- [x] 7.5 Deploy to staging and verify with Telegram bot
