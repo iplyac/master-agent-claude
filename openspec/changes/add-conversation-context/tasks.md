@@ -44,6 +44,11 @@
 
 ## 7. Deployment
 
-- [ ] 7.1 Деплой и проверка health check
-- [ ] 7.2 Тест с telegram-bot (новый формат)
-- [ ] 7.3 Тест с telegram-bot (старый формат для backward compat)
+- [x] 7.1 Деплой и проверка health check
+- [x] 7.2 Тест с API (новый формат) — `{"conversation_id": "tg_dm_123456", ...}`
+- [x] 7.3 Тест с API (старый формат для backward compat) — `{"session_id": "...", ...}`
+
+## Notes
+
+- Firestore database создана в `europe-west4`
+- Добавлен `GCP_PROJECT_ID` в env vars Cloud Run

@@ -37,7 +37,24 @@ class MessageProcessor:
 
         try:
             session_id = await self._get_provider_session(conversation_id)
-            return await self.llm_client.generate_response(message, session_id)
+
+            # Get conversation history
+            history = []
+            if self.conversation_store:
+                history = await self.conversation_store.get_history(conversation_id)
+
+            # Generate response with history context
+            response = await self.llm_client.generate_response(
+                message, session_id, history
+            )
+
+            # Save to history
+            if self.conversation_store:
+                await self.conversation_store.append_history(
+                    conversation_id, message, response
+                )
+
+            return response
         except RuntimeError:
             raise
         except Exception as e:

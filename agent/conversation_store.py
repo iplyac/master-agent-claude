@@ -16,10 +16,11 @@ COLLECTION_NAME = "conversations"
 
 @dataclass
 class ConversationMapping:
-    """Represents a conversation mapping with provider sessions."""
+    """Represents a conversation mapping with provider sessions and history."""
 
     providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    history: list[dict[str, Any]] = field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -28,6 +29,7 @@ class ConversationMapping:
         return {
             "providers": self.providers,
             "metadata": self.metadata,
+            "history": self.history,
             "created_at": self.created_at or datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -38,6 +40,7 @@ class ConversationMapping:
         return cls(
             providers=data.get("providers", {}),
             metadata=data.get("metadata", {}),
+            history=data.get("history", []),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )
@@ -138,6 +141,30 @@ class ConversationStore:
         mapping = await self.get_or_create(conversation_id)
         mapping.metadata.update(metadata)
         await self.save(conversation_id, mapping)
+
+    async def get_history(self, conversation_id: str) -> list[dict[str, Any]]:
+        """Get conversation history."""
+        mapping = await self.get(conversation_id)
+        if mapping:
+            return mapping.history
+        return []
+
+    async def append_history(
+        self, conversation_id: str, user_message: str, model_response: str
+    ) -> None:
+        """Append user message and model response to history."""
+        mapping = await self.get_or_create(conversation_id)
+        mapping.history.append({"role": "user", "parts": [{"text": user_message}]})
+        mapping.history.append({"role": "model", "parts": [{"text": model_response}]})
+        # Keep only last 20 turns (40 messages) to avoid token limits
+        if len(mapping.history) > 40:
+            mapping.history = mapping.history[-40:]
+        await self.save(conversation_id, mapping)
+        logger.debug(
+            "Appended to history: conversation_id=%s, history_length=%d",
+            conversation_id,
+            len(mapping.history),
+        )
 
     async def close(self) -> None:
         """Close the Firestore client."""

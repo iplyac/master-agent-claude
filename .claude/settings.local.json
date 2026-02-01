@@ -16,7 +16,14 @@
       "Bash(openspec instructions design:*)",
       "Bash(openspec instructions specs:*)",
       "Bash(openspec instructions tasks:*)",
-      "Bash(openspec instructions apply:*)"
+      "Bash(openspec instructions apply:*)",
+      "Bash(PROJECT_ID=\"gen-lang-client-0741140892\":*)",
+      "Bash(CLOUD_BUILD_SA=\"298607833444@cloudbuild.gserviceaccount.com\":*)",
+      "Bash(gcloud projects add-iam-policy-binding:*)",
+      "Bash(gcloud projects get-iam-policy:*)",
+      "Bash(git add:*)",
+      "Bash(gcloud run services describe:*)",
+      "Bash(python -m pytest:*)"
     ]
   }
 }

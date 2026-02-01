@@ -24,21 +24,32 @@ class LLMClient:
         self.endpoint = endpoint or DEFAULT_ENDPOINT
         self.client = httpx.AsyncClient(timeout=25.0)
 
-    async def generate_response(self, message: str, session_id: str) -> str:
+    async def generate_response(
+        self,
+        message: str,
+        session_id: str,
+        history: list[dict] | None = None,
+    ) -> str:
         """Send message to LLM and return text response."""
         if self.api_key is None:
             return "AI model not configured. Please contact administrator."
 
         url = f"{self.endpoint}/{self.model_name}:generateContent"
         params = {"key": self.api_key}
-        body = {
-            "contents": [{"parts": [{"text": message}]}],
-        }
+
+        # Build contents with history
+        contents = []
+        if history:
+            contents.extend(history)
+        contents.append({"role": "user", "parts": [{"text": message}]})
+
+        body = {"contents": contents}
 
         logger.info(
-            "LLM request: session_id=%s, message_length=%d, model=%s",
+            "LLM request: session_id=%s, message_length=%d, history_turns=%d, model=%s",
             session_id,
             len(message),
+            len(history) if history else 0,
             self.model_name,
         )
 

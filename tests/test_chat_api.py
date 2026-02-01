@@ -20,6 +20,8 @@ def setup_app_state():
     mock_conversation_store.get_or_create_provider_session = AsyncMock(
         side_effect=lambda conv_id, provider: f"{provider}_{conv_id[:12]}"
     )
+    mock_conversation_store.get_history = AsyncMock(return_value=[])
+    mock_conversation_store.append_history = AsyncMock()
     processor = MessageProcessor(llm_client, mock_conversation_store)
     app.state.llm_client = llm_client
     app.state.processor = processor
