@@ -46,3 +46,19 @@
 - **WHEN** GOOGLE_API_KEY не установлен
 - **AND** настроен Vertex AI backend
 - **THEN** сервис успешно запускается и обрабатывает запросы
+
+### Requirement: Voice messages share session context
+
+Голосовые сообщения SHALL обрабатываться в том же контексте сессии, что и текстовые.
+
+#### Scenario: Voice transcription via Vertex AI
+- **WHEN** поступает голосовое сообщение
+- **THEN** VoiceClient транскрибирует аудио через Vertex AI
+
+#### Scenario: Voice response through ADK Runner
+- **WHEN** транскрипция получена
+- **THEN** текст передаётся в ADK Runner для генерации ответа с сохранением контекста сессии
+
+#### Scenario: Shared context between text and voice
+- **WHEN** пользователь отправляет текстовое сообщение, затем голосовое
+- **THEN** голосовое сообщение видит историю текстовых сообщений в сессии
