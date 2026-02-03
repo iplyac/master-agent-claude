@@ -32,10 +32,8 @@ steps:
       - '--ingress'
       - 'all'
       - '--allow-unauthenticated'
-      - '--set-secrets'
-      - 'MODEL_API_KEY=GOOGLE_API_KEY:latest'
       - '--set-env-vars'
-      - 'GCP_PROJECT_ID=$PROJECT_ID'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=${_REGION},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=${_REGION},GOOGLE_GENAI_USE_VERTEXAI=true'
 
 # Substitution variables
 substitutions:

@@ -97,6 +97,11 @@ def get_region() -> str:
     return os.getenv("REGION") or "europe-west4"
 
 
+def get_location() -> str:
+    """Return GCP location for Vertex AI."""
+    return os.getenv("GCP_LOCATION") or os.getenv("REGION") or "europe-west4"
+
+
 def get_service_name() -> str:
     """Return service name."""
     return os.getenv("SERVICE_NAME") or "ai-agent"

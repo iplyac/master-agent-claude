@@ -117,6 +117,9 @@ class MessageProcessor:
     ) -> dict:
         """Process a voice message and return transcription + response.
 
+        Transcribes audio, then processes transcription through ADK Runner
+        to maintain conversation context.
+
         Args:
             conversation_id: Conversation identifier.
             audio_base64: Base64-encoded audio bytes.
@@ -141,9 +144,24 @@ class MessageProcessor:
             }
 
         try:
-            return await self.voice_client.generate_response_from_audio(
+            # Step 1: Transcribe audio
+            transcription = await self.voice_client.transcribe(
                 audio_base64, mime_type, conversation_id
             )
+
+            if not transcription:
+                return {
+                    "response": "Could not transcribe the audio. Please try again.",
+                    "transcription": "",
+                }
+
+            # Step 2: Process transcription through ADK Runner (preserves context)
+            response = await self.process(conversation_id, transcription)
+
+            return {
+                "response": response,
+                "transcription": transcription,
+            }
         except RuntimeError:
             raise
         except Exception as e:

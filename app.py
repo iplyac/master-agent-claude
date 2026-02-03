@@ -12,11 +12,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
 from agent.adk_agent import create_agent
-from agent.adk_session_service import FirestoreSessionService
 from agent.config import (
+    get_location,
     get_log_level,
-    get_model_api_key,
-    get_model_endpoint,
     get_model_name,
     get_port,
     get_project_id,
@@ -83,31 +81,28 @@ async def lifespan(app: FastAPI):
     setup_logging(project_id, log_level)
 
     port = get_port()
-    api_key = get_model_api_key()
     model_name = get_model_name()
-    endpoint = get_model_endpoint()
     region = get_region()
     service_name = get_service_name()
 
     logger.info(
-        "Starting %s: port=%d, model=%s, region=%s, api_key_configured=%s",
+        "Starting %s: port=%d, model=%s, region=%s, backend=VertexAI",
         service_name,
         port,
         model_name,
         region,
-        api_key is not None,
     )
 
     # Create ADK components
     agent = create_agent(model_name=model_name)
 
-    # Use InMemorySessionService for local testing, FirestoreSessionService in production
-    use_in_memory = os.environ.get("USE_IN_MEMORY_SESSION", "").lower() in ("true", "1", "yes")
-    if use_in_memory:
-        logger.info("Using InMemorySessionService (local testing mode)")
-        session_service = InMemorySessionService()
-    else:
-        session_service = FirestoreSessionService(project_id)
+    # Get location for Vertex AI services
+    location = get_location()
+
+    # Use InMemorySessionService for now (VertexAiSessionService requires ReasoningEngine deployment)
+    # TODO: Implement DatabaseSessionService with Cloud SQL for persistence
+    logger.info("Using InMemorySessionService (sessions not persisted across restarts)")
+    session_service = InMemorySessionService()
 
     runner = Runner(
         app_name="master_agent",
@@ -115,8 +110,8 @@ async def lifespan(app: FastAPI):
         session_service=session_service,
     )
 
-    # Create voice client for audio processing (uses direct Gemini API)
-    voice_client = VoiceClient(api_key, model_name, endpoint)
+    # Create voice client for audio processing (uses Vertex AI)
+    voice_client = VoiceClient(project_id, location, model_name)
 
     # Create processor with ADK Runner
     processor = MessageProcessor(runner, session_service, voice_client)
