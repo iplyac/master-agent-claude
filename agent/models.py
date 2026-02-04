@@ -96,3 +96,18 @@ class VoiceResponse(BaseModel):
 
     response: str
     transcription: Optional[str] = None
+
+
+class SessionInfoRequest(BaseModel):
+    """Session info API request model."""
+
+    conversation_id: str
+
+
+class SessionInfoResponse(BaseModel):
+    """Session info API response model."""
+
+    conversation_id: str
+    session_id: str
+    session_exists: bool
+    message_count: Optional[int] = None

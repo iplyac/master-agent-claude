@@ -1,38 +1,48 @@
 # AI Agent Service
 
-Stateless AI agent service deployed on Google Cloud Run. Accepts user messages via HTTP,
-processes them through a Gemini LLM, and returns text responses. Designed to integrate
-seamlessly with the Telegram Bot service.
+AI agent service deployed on Google Cloud Run. Accepts user messages via HTTP,
+processes them through Google ADK with Gemini LLM on Vertex AI, and returns text responses.
+Designed to integrate seamlessly with the Telegram Bot service.
 
 ## Architecture
 
-- **Single process**: uvicorn + FastAPI + httpx LLM client
-- **Lifespan management**: LLM client created at startup, closed at shutdown
-- **Stateless**: no database, no memory, no sessions — each request is independent
+- **Google ADK**: Agent Development Kit for conversation management
+- **Vertex AI**: Gemini models via service account authentication (no API keys)
+- **Session management**: In-memory sessions (not persisted across restarts)
+- **Voice support**: Audio transcription via Vertex AI multimodal API
 - **Structured logging**: JSON logs with Cloud Trace integration
 
 ## Prerequisites
 
 - Docker
 - `gcloud` CLI (authenticated: `gcloud auth login`)
-- LLM API key (Gemini or compatible endpoint)
-- Optional: Google Secret Manager + Application Default Credentials for local secret reads
+- GCP project with Vertex AI API enabled
+- Service account with `Vertex AI User` role
 
 ## API Endpoints
 
-| Method | Path        | Description              |
-|--------|-------------|--------------------------|
-| GET    | /health     | Health check             |
-| GET    | /healthz    | Health check (alias)     |
-| POST   | /api/chat   | Process message via LLM  |
+| Method | Path              | Description                    |
+|--------|-------------------|--------------------------------|
+| GET    | /health           | Health check                   |
+| GET    | /healthz          | Health check (alias)           |
+| POST   | /api/chat         | Process text message           |
+| POST   | /api/voice        | Process voice message          |
+| POST   | /api/session-info | Get session information        |
 
 ### POST /api/chat
 
 Request:
 ```json
 {
-  "session_id": "tg_123456",
-  "message": "Hello, how are you?"
+  "conversation_id": "tg_dm_123456",
+  "message": "Hello, how are you?",
+  "metadata": {
+    "telegram": {
+      "chat_id": 123456,
+      "user_id": 789,
+      "chat_type": "private"
+    }
+  }
 }
 ```
 
@@ -43,71 +53,108 @@ Response:
 }
 ```
 
+### POST /api/voice
+
+Request:
+```json
+{
+  "conversation_id": "tg_dm_123456",
+  "audio_base64": "<base64-encoded-audio>",
+  "mime_type": "audio/ogg",
+  "metadata": {
+    "telegram": {
+      "chat_id": 123456,
+      "user_id": 789,
+      "chat_type": "private"
+    }
+  }
+}
+```
+
+Response:
+```json
+{
+  "response": "Here's my answer to your voice message...",
+  "transcription": "What the user said in the audio"
+}
+```
+
+### POST /api/session-info
+
+Request:
+```json
+{
+  "conversation_id": "tg_dm_123456"
+}
+```
+
+Response:
+```json
+{
+  "conversation_id": "tg_dm_123456",
+  "session_id": "tg_dm_123456",
+  "session_exists": true,
+  "message_count": 5
+}
+```
+
 ## Local Development
 
-1. Copy environment template:
+1. Authenticate with GCP:
+   ```bash
+   gcloud auth application-default login
+   ```
+
+2. Copy environment template:
    ```bash
    cp .env.example .env
    ```
 
-2. Set your API key in `.env`:
+3. Set environment variables in `.env`:
    ```
-   MODEL_API_KEY=your-gemini-api-key
+   GCP_PROJECT_ID=your-gcp-project
+   GCP_LOCATION=europe-west4
+   GOOGLE_GENAI_USE_VERTEXAI=true
    ```
-   Alternatively, configure Application Default Credentials and store the key
-   in Secret Manager (secret name: `MODEL_API_KEY`).
 
-3. Build and run locally:
+4. Run locally:
    ```bash
-   ./deploy-agent-local.sh
+   python -m uvicorn app:app --host 0.0.0.0 --port 8080
    ```
 
-4. Verify:
+5. Verify:
    ```bash
    curl http://localhost:8080/health
    # {"status":"ok"}
 
    curl -X POST http://localhost:8080/api/chat \
      -H 'Content-Type: application/json' \
-     -d '{"session_id":"tg_123","message":"hello"}'
-   ```
-
-   Without an API key configured, the response will be:
-   ```json
-   {"response": "AI model not configured. Please contact administrator."}
+     -d '{"conversation_id":"test_123","message":"hello"}'
    ```
 
 ## Cloud Run Deployment
 
 Default deployment values:
-- SERVICE_NAME=ai-agent
+- SERVICE_NAME=master-agent
 - REGION=europe-west4
 
-### Step 1: Store API key in Secret Manager
+### Step 1: Grant Vertex AI access to service account
 
 ```bash
-echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create MODEL_API_KEY --data-file=-
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
 ```
 
 ### Step 2: Deploy
 
 ```bash
-export PROJECT_ID=your-gcp-project
-export SERVICE_NAME=ai-agent
-export REGION=europe-west4
-./deploy-agent.sh
-```
-
-For a forced rebuild (no cache):
-```bash
-./deploy-agent.sh --no-cache
-```
-
-### Alternative: Docker Buildx deployment
-
-```bash
-export PROJECT_ID=your-gcp-project
-./deploy-agent-buildx.sh
+gcloud run deploy master-agent \
+  --source . \
+  --region europe-west4 \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars "GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=europe-west4,GOOGLE_GENAI_USE_VERTEXAI=true"
 ```
 
 ### Important: Terminal environment
@@ -123,25 +170,26 @@ sudo chown -R $(whoami) ~/.config/gcloud
 
 ## Environment Variables
 
-| Variable                | Required | Default               | Description                     |
-|-------------------------|----------|-----------------------|---------------------------------|
-| PORT                    | No       | 8080                  | Server port (Cloud Run injects) |
-| MODEL_API_KEY           | No       | -                     | LLM API key                     |
-| MODEL_API_KEY_SECRET_ID | No       | GOOGLE_API_KEY        | Secret Manager secret name      |
-| MODEL_NAME              | No       | gemini-2.0-flash-exp  | LLM model name                  |
-| MODEL_ENDPOINT          | No       | Gemini REST API       | Custom LLM endpoint             |
-| GCP_PROJECT_ID          | No       | -                     | GCP project ID                  |
-| PROJECT_ID              | No       | -                     | GCP project ID (fallback)       |
-| REGION                  | No       | europe-west4          | Deployment region               |
-| SERVICE_NAME            | No       | ai-agent              | Cloud Run service name          |
-| LOG_LEVEL               | No       | INFO                  | Logging level                   |
+| Variable                  | Required | Default            | Description                        |
+|---------------------------|----------|--------------------|------------------------------------|
+| PORT                      | No       | 8080               | Server port (Cloud Run injects)    |
+| MODEL_NAME                | No       | gemini-2.0-flash   | LLM model name                     |
+| GCP_PROJECT_ID            | No       | -                  | GCP project ID                     |
+| GCP_LOCATION              | No       | europe-west4       | Vertex AI location                 |
+| GOOGLE_GENAI_USE_VERTEXAI | Yes      | -                  | Must be `true` for Vertex AI       |
+| REGION                    | No       | europe-west4       | Deployment region                  |
+| SERVICE_NAME              | No       | ai-agent           | Cloud Run service name             |
+| LOG_LEVEL                 | No       | INFO               | Logging level                      |
 
 ## Security
 
-- Secrets are excluded from version control via `.gitignore`
-- Logs never contain API keys or full message content
-- API keys are sanitized (whitespace/control chars removed) and masked in error messages
-- Production secrets are managed via Google Secret Manager and mounted as environment variables
+- No API keys required - uses GCP service account authentication
+- Logs never contain sensitive message content
+- Tokens are masked in error messages
+
+## Documentation
+
+- [Telegram Bot Integration](docs/telegram-bot-integration.md) - Session info endpoint and `/sessioninfo` command
 
 ## Testing
 

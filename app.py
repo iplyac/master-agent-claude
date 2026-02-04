@@ -22,7 +22,7 @@ from agent.config import (
     get_service_name,
     mask_token,
 )
-from agent.models import ChatRequest, VoiceRequest
+from agent.models import ChatRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
 from agent.processor import MessageProcessor
 from agent.voice_client import VoiceClient
 
@@ -156,6 +156,50 @@ async def health():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.post("/api/session-info")
+async def session_info(request: Request):
+    """Get session information by conversation_id."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON"},
+        )
+
+    try:
+        info_request = SessionInfoRequest(**body)
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)},
+        )
+
+    conversation_id = info_request.conversation_id
+    session_service = request.app.state.session_service
+
+    # Check if session exists
+    try:
+        session = await session_service.get_session(
+            app_name="master_agent",
+            user_id=conversation_id,
+            session_id=conversation_id,
+        )
+        session_exists = session is not None
+        message_count = len(session.events) if session and hasattr(session, "events") else None
+    except Exception:
+        session_exists = False
+        message_count = None
+
+    response = SessionInfoResponse(
+        conversation_id=conversation_id,
+        session_id=conversation_id,
+        session_exists=session_exists,
+        message_count=message_count,
+    )
+    return response.model_dump()
 
 
 @app.post("/api/chat")
