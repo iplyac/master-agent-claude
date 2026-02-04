@@ -7,7 +7,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService
 from google.genai import types
 
-from agent.voice_client import VoiceClient
+from agent.media_client import MediaClient
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +21,18 @@ class MessageProcessor:
         self,
         runner: Runner,
         session_service: BaseSessionService,
-        voice_client: Optional[VoiceClient] = None,
+        media_client: Optional[MediaClient] = None,
     ):
         """Initialize the processor.
 
         Args:
             runner: ADK Runner for processing text messages.
             session_service: Session service for creating/managing sessions.
-            voice_client: Optional client for voice message processing.
+            media_client: Optional client for media (voice, image) processing.
         """
         self.runner = runner
         self.session_service = session_service
-        self.voice_client = voice_client
+        self.media_client = media_client
 
     async def process(self, conversation_id: str, message: str) -> str:
         """Process a user message and return the agent response.
@@ -137,7 +137,7 @@ class MessageProcessor:
                 "transcription": "",
             }
 
-        if self.voice_client is None:
+        if self.media_client is None:
             return {
                 "response": "Voice processing not configured.",
                 "transcription": "",
@@ -145,7 +145,7 @@ class MessageProcessor:
 
         try:
             # Step 1: Transcribe audio
-            transcription = await self.voice_client.transcribe(
+            transcription = await self.media_client.transcribe(
                 audio_base64, mime_type, conversation_id
             )
 
@@ -171,3 +171,70 @@ class MessageProcessor:
                 e,
             )
             raise RuntimeError("Failed to process voice message") from e
+
+    async def process_image(
+        self, conversation_id: str, image_base64: str, mime_type: str, prompt: str | None = None
+    ) -> dict:
+        """Process an image and return description + response.
+
+        Describes the image, then processes through ADK Runner
+        to maintain conversation context.
+
+        Args:
+            conversation_id: Conversation identifier.
+            image_base64: Base64-encoded image bytes.
+            mime_type: Image MIME type.
+            prompt: Optional question about the image.
+
+        Returns:
+            dict with "response" and "description" keys.
+
+        Raises:
+            RuntimeError: If processing fails.
+        """
+        if not image_base64 or not image_base64.strip():
+            return {
+                "response": "Empty image received. Please send an image.",
+                "description": "",
+            }
+
+        if self.media_client is None:
+            return {
+                "response": "Image processing not configured.",
+                "description": "",
+            }
+
+        try:
+            # Step 1: Describe image
+            description = await self.media_client.describe_image(
+                image_base64, mime_type, conversation_id, prompt
+            )
+
+            if not description:
+                return {
+                    "response": "Could not describe the image. Please try again.",
+                    "description": "",
+                }
+
+            # Step 2: Build message for ADK Runner
+            if prompt:
+                message = f"[User sent an image with question: {prompt}]\n\nImage description: {description}"
+            else:
+                message = f"[User sent an image]\n\nImage description: {description}"
+
+            # Step 3: Process through ADK Runner (preserves context)
+            response = await self.process(conversation_id, message)
+
+            return {
+                "response": response,
+                "description": description,
+            }
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.error(
+                "Image processing error: conversation_id=%s, error=%s",
+                conversation_id,
+                e,
+            )
+            raise RuntimeError("Failed to process image") from e

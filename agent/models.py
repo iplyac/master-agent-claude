@@ -98,6 +98,27 @@ class VoiceResponse(BaseModel):
     transcription: Optional[str] = None
 
 
+class ImageRequest(BaseModel):
+    """Image API request model."""
+
+    conversation_id: str
+    image_base64: str
+    mime_type: str = "image/jpeg"
+    prompt: Optional[str] = None
+    metadata: Optional[RequestMetadata] = None
+
+    def get_conversation_id(self) -> str:
+        """Return conversation_id."""
+        return self.conversation_id
+
+
+class ImageResponse(BaseModel):
+    """Image API response model."""
+
+    response: str
+    description: str
+
+
 class SessionInfoRequest(BaseModel):
     """Session info API request model."""
 

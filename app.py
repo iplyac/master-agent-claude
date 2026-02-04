@@ -22,9 +22,9 @@ from agent.config import (
     get_service_name,
     mask_token,
 )
-from agent.models import ChatRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
+from agent.models import ChatRequest, ImageRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
 from agent.processor import MessageProcessor
-from agent.voice_client import VoiceClient
+from agent.media_client import MediaClient
 
 # Cloud Trace context variable
 trace_context: ContextVar[str] = ContextVar("trace_context", default="")
@@ -110,23 +110,23 @@ async def lifespan(app: FastAPI):
         session_service=session_service,
     )
 
-    # Create voice client for audio processing (uses Vertex AI)
-    voice_client = VoiceClient(project_id, location, model_name)
+    # Create media client for audio/image processing (uses Vertex AI)
+    media_client = MediaClient(project_id, location, model_name)
 
     # Create processor with ADK Runner
-    processor = MessageProcessor(runner, session_service, voice_client)
+    processor = MessageProcessor(runner, session_service, media_client)
 
     # Store in app state
     app.state.runner = runner
     app.state.session_service = session_service
     app.state.processor = processor
-    app.state.voice_client = voice_client
+    app.state.media_client = media_client
 
     yield
 
     # --- Shutdown ---
     logger.info("Shutting down %s", service_name)
-    await voice_client.close()
+    await media_client.close()
     if hasattr(session_service, "close"):
         await session_service.close()
 
@@ -322,6 +322,102 @@ async def voice(request: Request):
     except Exception as e:
         error_msg = mask_token(str(e))
         logger.error("Voice API error: conversation_id=%s, error=%s", conversation_id, error_msg)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Agent unavailable, please try again later"},
+        )
+
+
+@app.post("/api/image")
+async def image(request: Request):
+    """
+    Process image via Gemini multimodal API.
+
+    Request JSON:
+    {
+        "conversation_id": "tg_<chat_id>",
+        "image_base64": "<base64-encoded-image>",
+        "mime_type": "image/jpeg",
+        "prompt": "What is in this image?",
+        "metadata": {"telegram": {"chat_id": 123, "user_id": 456, "chat_type": "private"}}
+    }
+
+    Response JSON:
+    {
+        "response": "<agent_reply>",
+        "description": "<image_description>"
+    }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+    try:
+        image_request = ImageRequest(**body)
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)},
+        )
+
+    conversation_id = image_request.get_conversation_id()
+    image_base64 = image_request.image_base64
+    mime_type = image_request.mime_type
+    prompt = image_request.prompt
+
+    if not image_base64:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "image_base64 is required"},
+        )
+
+    # Validate mime type
+    supported_mime_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if mime_type not in supported_mime_types:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Unsupported mime_type. Supported: {', '.join(supported_mime_types)}"},
+        )
+
+    # Validate base64 encoding
+    import base64 as b64
+    try:
+        b64.b64decode(image_base64, validate=True)
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid base64 encoding"},
+        )
+
+    # Log request (without image content)
+    image_size = len(image_base64) * 3 // 4
+    logger.info(
+        "Image API request: conversation_id=%s, image_size=%d, mime_type=%s, has_prompt=%s",
+        conversation_id,
+        image_size,
+        mime_type,
+        prompt is not None,
+    )
+
+    # Log telegram metadata if present
+    if image_request.metadata and image_request.metadata.telegram:
+        tg = image_request.metadata.telegram
+        logger.info(
+            "Image request with Telegram metadata: conversation_id=%s, chat_id=%d, user_id=%d, chat_type=%s",
+            conversation_id,
+            tg.chat_id,
+            tg.user_id,
+            tg.chat_type,
+        )
+
+    try:
+        processor: MessageProcessor = request.app.state.processor
+        result = await processor.process_image(conversation_id, image_base64, mime_type, prompt)
+        return result
+    except Exception as e:
+        error_msg = mask_token(str(e))
+        logger.error("Image API error: conversation_id=%s, error=%s", conversation_id, error_msg)
         return JSONResponse(
             status_code=500,
             content={"error": "Agent unavailable, please try again later"},

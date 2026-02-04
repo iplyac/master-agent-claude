@@ -10,6 +10,7 @@ Designed to integrate seamlessly with the Telegram Bot service.
 - **Vertex AI**: Gemini models via service account authentication (no API keys)
 - **Session management**: In-memory sessions (not persisted across restarts)
 - **Voice support**: Audio transcription via Vertex AI multimodal API
+- **Image support**: Image recognition and description via Vertex AI multimodal API
 - **Structured logging**: JSON logs with Cloud Trace integration
 
 ## Prerequisites
@@ -27,6 +28,7 @@ Designed to integrate seamlessly with the Telegram Bot service.
 | GET    | /healthz          | Health check (alias)           |
 | POST   | /api/chat         | Process text message           |
 | POST   | /api/voice        | Process voice message          |
+| POST   | /api/image        | Process image                  |
 | POST   | /api/session-info | Get session information        |
 
 ### POST /api/chat
@@ -76,6 +78,33 @@ Response:
 {
   "response": "Here's my answer to your voice message...",
   "transcription": "What the user said in the audio"
+}
+```
+
+### POST /api/image
+
+Request:
+```json
+{
+  "conversation_id": "tg_dm_123456",
+  "image_base64": "<base64-encoded-image>",
+  "mime_type": "image/jpeg",
+  "prompt": "What is in this image?",
+  "metadata": {
+    "telegram": {
+      "chat_id": 123456,
+      "user_id": 789,
+      "chat_type": "private"
+    }
+  }
+}
+```
+
+Response:
+```json
+{
+  "response": "This image shows a cat sitting on a windowsill...",
+  "description": "A tabby cat with orange fur sitting on a wooden windowsill."
 }
 ```
 
