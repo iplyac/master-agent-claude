@@ -33,12 +33,13 @@ steps:
       - 'all'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=${_REGION},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=${_REGION},GOOGLE_GENAI_USE_VERTEXAI=true'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=${_REGION},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=${_REGION},GOOGLE_GENAI_USE_VERTEXAI=true,AGENT_PROMPT_ID=${_AGENT_PROMPT_ID}'
 
 # Substitution variables
 substitutions:
   _REGION: 'europe-west4'
   _SERVICE_NAME: 'master-agent'
+  _AGENT_PROMPT_ID: '5914177388295487488'
 
 # Build options
 options:

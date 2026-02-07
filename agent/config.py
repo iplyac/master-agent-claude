@@ -105,3 +105,8 @@ def get_location() -> str:
 def get_service_name() -> str:
     """Return service name."""
     return os.getenv("SERVICE_NAME") or "ai-agent"
+
+
+def get_prompt_id() -> Optional[str]:
+    """Return Vertex AI Prompt ID if configured."""
+    return os.getenv("AGENT_PROMPT_ID") or None

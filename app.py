@@ -11,13 +11,14 @@ from pythonjsonlogger import jsonlogger
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from agent.adk_agent import create_agent
+from agent.adk_agent import create_agent, load_prompt_from_vertex_ai
 from agent.config import (
     get_location,
     get_log_level,
     get_model_name,
     get_port,
     get_project_id,
+    get_prompt_id,
     get_region,
     get_service_name,
     mask_token,
@@ -85,6 +86,9 @@ async def lifespan(app: FastAPI):
     region = get_region()
     service_name = get_service_name()
 
+    # Get location for Vertex AI services
+    location = get_location()
+
     logger.info(
         "Starting %s: port=%d, model=%s, region=%s, backend=VertexAI",
         service_name,
@@ -93,11 +97,21 @@ async def lifespan(app: FastAPI):
         region,
     )
 
-    # Create ADK components
-    agent = create_agent(model_name=model_name)
+    # Load system prompt from Vertex AI Prompt Management (if configured)
+    instruction = None
+    prompt_id = get_prompt_id()
+    if prompt_id:
+        logger.info("Loading prompt from Vertex AI: prompt_id=%s", prompt_id)
+        instruction = load_prompt_from_vertex_ai(project_id, location, prompt_id)
+        if instruction:
+            logger.info("Using prompt from Vertex AI Prompt Management")
+        else:
+            logger.warning("Falling back to default instruction")
+    else:
+        logger.info("AGENT_PROMPT_ID not configured, using default instruction")
 
-    # Get location for Vertex AI services
-    location = get_location()
+    # Create ADK components
+    agent = create_agent(model_name=model_name, instruction=instruction)
 
     # Use InMemorySessionService for now (VertexAiSessionService requires ReasoningEngine deployment)
     # TODO: Implement DatabaseSessionService with Cloud SQL for persistence
