@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -29,6 +30,9 @@ from agent.media_client import MediaClient
 
 # Cloud Trace context variable
 trace_context: ContextVar[str] = ContextVar("trace_context", default="")
+
+# Lock for serializing reload operations
+reload_lock = asyncio.Lock()
 
 
 class CloudTraceFormatter(jsonlogger.JsonFormatter):
@@ -130,11 +134,15 @@ async def lifespan(app: FastAPI):
     # Create processor with ADK Runner
     processor = MessageProcessor(runner, session_service, media_client)
 
-    # Store in app state
+    # Store in app state (mutable for reload support)
     app.state.runner = runner
+    app.state.agent = agent
     app.state.session_service = session_service
     app.state.processor = processor
     app.state.media_client = media_client
+    app.state.project_id = project_id
+    app.state.location = location
+    app.state.model_name = model_name
 
     yield
 
@@ -170,6 +178,67 @@ async def health():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.post("/api/reload-prompt")
+async def reload_prompt(request: Request):
+    """
+    Reload system prompt from Vertex AI Prompt Management.
+
+    Response JSON (success):
+    {"status": "ok", "prompt_length": 1234}
+
+    Response JSON (error):
+    {"status": "error", "error": "message"}
+    """
+    prompt_id = get_prompt_id()
+    if not prompt_id:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": "AGENT_PROMPT_ID not configured"},
+        )
+
+    async with reload_lock:
+        try:
+            project_id = request.app.state.project_id
+            location = request.app.state.location
+            model_name = request.app.state.model_name
+            session_service = request.app.state.session_service
+
+            logger.info("Reloading prompt from Vertex AI: prompt_id=%s", prompt_id)
+            instruction = load_prompt_from_vertex_ai(project_id, location, prompt_id)
+
+            if not instruction:
+                return JSONResponse(
+                    status_code=500,
+                    content={"status": "error", "error": "Failed to load prompt from Vertex AI"},
+                )
+
+            # Create new agent and runner
+            new_agent = create_agent(model_name=model_name, instruction=instruction)
+            new_runner = Runner(
+                app_name="master_agent",
+                agent=new_agent,
+                session_service=session_service,
+            )
+
+            # Update app state atomically
+            request.app.state.agent = new_agent
+            request.app.state.runner = new_runner
+            request.app.state.processor = MessageProcessor(
+                new_runner, session_service, request.app.state.media_client
+            )
+
+            logger.info("Prompt reloaded successfully: length=%d", len(instruction))
+            return {"status": "ok", "prompt_length": len(instruction)}
+
+        except Exception as e:
+            error_msg = mask_token(str(e))
+            logger.error("Reload prompt error: %s", error_msg)
+            return JSONResponse(
+                status_code=500,
+                content={"status": "error", "error": error_msg},
+            )
 
 
 @app.post("/api/session-info")
