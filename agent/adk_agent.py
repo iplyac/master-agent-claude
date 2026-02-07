@@ -18,8 +18,8 @@ Be concise, friendly, and helpful in your responses."""
 def load_prompt_from_vertex_ai(project_id: str, location: str, prompt_id: str) -> str | None:
     """Load system prompt from Vertex AI Prompt Management.
 
-    Uses vertexai.preview.prompts to fetch only the system_instruction text,
-    bypassing the thinkingConfig parsing bug.
+    Uses REST API directly to bypass SDK thinkingConfig parsing bug.
+    See: https://github.com/googleapis/google-cloud-python/issues/14941
 
     Args:
         project_id: GCP project ID.
@@ -30,23 +30,53 @@ def load_prompt_from_vertex_ai(project_id: str, location: str, prompt_id: str) -
         System instruction text or None if loading fails.
     """
     try:
-        import vertexai
-        from vertexai.preview import prompts
+        import google.auth
+        import google.auth.transport.requests
+        import httpx
 
-        vertexai.init(project=project_id, location=location)
+        # Get credentials
+        credentials, _ = google.auth.default()
+        auth_req = google.auth.transport.requests.Request()
+        credentials.refresh(auth_req)
 
-        # Get the managed prompt object
-        managed_prompt = prompts.get(prompt_id=prompt_id)
+        # Prompts are stored as datasets in Vertex AI
+        url = (
+            f"https://{location}-aiplatform.googleapis.com/v1beta1/"
+            f"projects/{project_id}/locations/{location}/datasets/{prompt_id}"
+        )
 
-        # Access system_instruction directly (not prompt_data which has thinkingConfig)
-        if managed_prompt.system_instruction:
-            instruction = managed_prompt.system_instruction
-            logger.info(
-                "Loaded prompt from Vertex AI: prompt_id=%s, length=%d",
-                prompt_id,
-                len(instruction),
+        headers = {
+            "Authorization": f"Bearer {credentials.token}",
+            "Content-Type": "application/json",
+        }
+
+        response = httpx.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        # Extract system instruction from:
+        # metadata.promptApiSchema.multimodalPrompt.promptMessage.systemInstruction.parts[0].text
+        try:
+            system_instruction = (
+                data.get("metadata", {})
+                .get("promptApiSchema", {})
+                .get("multimodalPrompt", {})
+                .get("promptMessage", {})
+                .get("systemInstruction", {})
+                .get("parts", [{}])[0]
+                .get("text")
             )
-            return instruction
+
+            if system_instruction:
+                logger.info(
+                    "Loaded prompt from Vertex AI: prompt_id=%s, length=%d",
+                    prompt_id,
+                    len(system_instruction),
+                )
+                return system_instruction
+
+        except (IndexError, KeyError, TypeError):
+            pass
 
         logger.warning("Prompt %s has no system instruction", prompt_id)
         return None
