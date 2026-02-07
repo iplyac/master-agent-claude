@@ -8,6 +8,7 @@ Designed to integrate seamlessly with the Telegram Bot service.
 
 - **Google ADK**: Agent Development Kit for conversation management
 - **Vertex AI**: Gemini models via service account authentication (no API keys)
+- **Prompt Management**: System prompts loaded from Vertex AI, reloadable at runtime
 - **Session management**: In-memory sessions (not persisted across restarts)
 - **Voice support**: Audio transcription via Vertex AI multimodal API
 - **Image support**: Image recognition and description via Vertex AI multimodal API
@@ -22,14 +23,15 @@ Designed to integrate seamlessly with the Telegram Bot service.
 
 ## API Endpoints
 
-| Method | Path              | Description                    |
-|--------|-------------------|--------------------------------|
-| GET    | /health           | Health check                   |
-| GET    | /healthz          | Health check (alias)           |
-| POST   | /api/chat         | Process text message           |
-| POST   | /api/voice        | Process voice message          |
-| POST   | /api/image        | Process image                  |
-| POST   | /api/session-info | Get session information        |
+| Method | Path               | Description                    |
+|--------|--------------------|--------------------------------|
+| GET    | /health            | Health check                   |
+| GET    | /healthz           | Health check (alias)           |
+| POST   | /api/chat          | Process text message           |
+| POST   | /api/voice         | Process voice message          |
+| POST   | /api/image         | Process image                  |
+| POST   | /api/session-info  | Get session information        |
+| POST   | /api/reload-prompt | Reload system prompt           |
 
 ### POST /api/chat
 
@@ -127,6 +129,28 @@ Response:
 }
 ```
 
+### POST /api/reload-prompt
+
+Reload the system prompt from Vertex AI Prompt Management without restarting the service.
+
+Request: No body required.
+
+Response (success):
+```json
+{
+  "status": "ok",
+  "prompt_length": 207
+}
+```
+
+Response (error - prompt not configured):
+```json
+{
+  "status": "error",
+  "error": "AGENT_PROMPT_ID not configured"
+}
+```
+
 ## Local Development
 
 1. Authenticate with GCP:
@@ -206,6 +230,7 @@ sudo chown -R $(whoami) ~/.config/gcloud
 | GCP_PROJECT_ID            | No       | -                  | GCP project ID                     |
 | GCP_LOCATION              | No       | europe-west4       | Vertex AI location                 |
 | GOOGLE_GENAI_USE_VERTEXAI | Yes      | -                  | Must be `true` for Vertex AI       |
+| AGENT_PROMPT_ID           | No       | -                  | Vertex AI Prompt ID for dynamic loading |
 | REGION                    | No       | europe-west4       | Deployment region                  |
 | SERVICE_NAME              | No       | ai-agent           | Cloud Run service name             |
 | LOG_LEVEL                 | No       | INFO               | Logging level                      |
