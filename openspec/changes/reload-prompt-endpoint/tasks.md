@@ -17,5 +17,5 @@
 
 ## 4. Deploy
 
-- [ ] 4.1 Задеплоить обновлённый master-agent
-- [ ] 4.2 Проверить reload через curl/Telegram бот
+- [x] 4.1 Задеплоить обновлённый master-agent
+- [x] 4.2 Проверить reload через curl/Telegram бот
