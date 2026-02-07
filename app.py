@@ -180,6 +180,19 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.get("/api/prompt")
+async def get_prompt(request: Request):
+    """
+    Get current system prompt.
+
+    Response JSON:
+    {"prompt": "<text>", "length": 1234}
+    """
+    agent = request.app.state.agent
+    prompt = agent.instruction if agent else ""
+    return {"prompt": prompt, "length": len(prompt)}
+
+
 @app.post("/api/reload-prompt")
 async def reload_prompt(request: Request):
     """

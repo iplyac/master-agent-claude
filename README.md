@@ -27,6 +27,7 @@ Designed to integrate seamlessly with the Telegram Bot service.
 |--------|--------------------|--------------------------------|
 | GET    | /health            | Health check                   |
 | GET    | /healthz           | Health check (alias)           |
+| GET    | /api/prompt        | Get current system prompt      |
 | POST   | /api/chat          | Process text message           |
 | POST   | /api/voice         | Process voice message          |
 | POST   | /api/image         | Process image                  |
@@ -126,6 +127,18 @@ Response:
   "session_id": "tg_dm_123456",
   "session_exists": true,
   "message_count": 5
+}
+```
+
+### GET /api/prompt
+
+Get the current system prompt.
+
+Response:
+```json
+{
+  "prompt": "You are a helpful AI assistant...",
+  "length": 207
 }
 ```
 
