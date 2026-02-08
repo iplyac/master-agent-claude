@@ -19,6 +19,7 @@ class MediaClient:
         project: str,
         location: str,
         model_name: str,
+        image_model_name: str = "gemini-3-pro-image-preview",
     ):
         """Initialize the media client with Vertex AI.
 
@@ -26,10 +27,12 @@ class MediaClient:
             project: GCP project ID.
             location: GCP location (e.g., europe-west4).
             model_name: Model name to use.
+            image_model_name: Model name for image processing with Nano Banana Pro.
         """
         self.project = project
         self.location = location
         self.model_name = model_name
+        self.image_model_name = image_model_name
         self.client = genai.Client(
             vertexai=True,
             project=project,
@@ -159,6 +162,93 @@ class MediaClient:
             error_msg = mask_token(str(e))
             logger.error("Image description error: session_id=%s, error=%s", session_id, error_msg)
             raise RuntimeError(f"Image description error: {error_msg}") from e
+
+    async def process_image_with_model(
+        self, image_base64: str, mime_type: str, session_id: str, prompt: str
+    ) -> dict:
+        """Process an image with a text prompt using Nano Banana Pro model.
+
+        Args:
+            image_base64: Base64-encoded image bytes.
+            mime_type: Image MIME type (e.g., "image/jpeg").
+            session_id: Session ID for logging.
+            prompt: Text prompt describing the desired processing.
+
+        Returns:
+            Dict with "text" (str), "image_base64" (str|None), "image_mime_type" (str|None).
+
+        Raises:
+            RuntimeError: If processing fails.
+        """
+        image_size = len(image_base64) * 3 // 4
+        logger.info(
+            "Image model processing request: session_id=%s, image_size=%d, mime_type=%s, model=%s",
+            session_id,
+            image_size,
+            mime_type,
+            self.image_model_name,
+        )
+
+        try:
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_bytes(
+                            data=base64.b64decode(image_base64),
+                            mime_type=mime_type,
+                        ),
+                        types.Part.from_text(text=prompt),
+                    ],
+                )
+            ]
+
+            response = await self.client.aio.models.generate_content(
+                model=self.image_model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
+            )
+
+            result_text = None
+            result_image_base64 = None
+            result_image_mime_type = None
+
+            if response.candidates and response.candidates[0].content:
+                for part in response.candidates[0].content.parts:
+                    if part.text:
+                        result_text = (result_text or "") + part.text
+                    elif part.inline_data:
+                        result_image_base64 = base64.b64encode(
+                            part.inline_data.data
+                        ).decode("utf-8")
+                        result_image_mime_type = part.inline_data.mime_type
+
+            if result_text:
+                result_text = result_text.strip()
+
+            logger.info(
+                "Image model processing complete: session_id=%s, has_text=%s, has_image=%s",
+                session_id,
+                result_text is not None,
+                result_image_base64 is not None,
+            )
+
+            return {
+                "text": result_text or "",
+                "image_base64": result_image_base64,
+                "image_mime_type": result_image_mime_type,
+            }
+
+        except Exception as e:
+            error_msg = mask_token(str(e))
+            logger.error(
+                "Image model processing error: session_id=%s, error=%s",
+                session_id,
+                error_msg,
+            )
+            raise RuntimeError(f"Image model processing error: {error_msg}") from e
 
     async def close(self) -> None:
         """Close the client (no-op for genai client)."""

@@ -110,3 +110,8 @@ def get_service_name() -> str:
 def get_prompt_id() -> Optional[str]:
     """Return Vertex AI Prompt ID if configured."""
     return os.getenv("AGENT_PROMPT_ID") or None
+
+
+def get_image_model_name() -> str:
+    """Return image processing model name or default."""
+    return os.getenv("IMAGE_MODEL_NAME") or "gemini-3-pro-image-preview"

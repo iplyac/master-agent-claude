@@ -14,6 +14,7 @@ from google.adk.sessions import InMemorySessionService
 
 from agent.adk_agent import create_agent, load_prompt_from_vertex_ai
 from agent.config import (
+    get_image_model_name,
     get_location,
     get_log_level,
     get_model_name,
@@ -129,7 +130,9 @@ async def lifespan(app: FastAPI):
     )
 
     # Create media client for audio/image processing (uses Vertex AI)
-    media_client = MediaClient(project_id, location, model_name)
+    image_model_name = get_image_model_name()
+    logger.info("Image processing model: %s", image_model_name)
+    media_client = MediaClient(project_id, location, model_name, image_model_name)
 
     # Create processor with ADK Runner
     processor = MessageProcessor(runner, session_service, media_client)

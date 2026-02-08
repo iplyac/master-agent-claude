@@ -117,6 +117,8 @@ class ImageResponse(BaseModel):
 
     response: str
     description: str
+    processed_image_base64: Optional[str] = None
+    processed_image_mime_type: Optional[str] = None
 
 
 class SessionInfoRequest(BaseModel):

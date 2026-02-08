@@ -196,38 +196,61 @@ class MessageProcessor:
             return {
                 "response": "Empty image received. Please send an image.",
                 "description": "",
+                "processed_image_base64": None,
+                "processed_image_mime_type": None,
             }
 
         if self.media_client is None:
             return {
                 "response": "Image processing not configured.",
                 "description": "",
+                "processed_image_base64": None,
+                "processed_image_mime_type": None,
             }
 
         try:
-            # Step 1: Describe image
+            if prompt and self.media_client:
+                # Image + prompt: use Nano Banana Pro model for processing
+                model_result = await self.media_client.process_image_with_model(
+                    image_base64, mime_type, conversation_id, prompt
+                )
+
+                description = model_result["text"]
+
+                # Build message for ADK Runner to preserve context
+                message = f"[User sent an image with prompt: {prompt}]\n\nModel response: {description}"
+                response = await self.process(conversation_id, message)
+
+                return {
+                    "response": response,
+                    "description": description,
+                    "processed_image_base64": model_result["image_base64"],
+                    "processed_image_mime_type": model_result["image_mime_type"],
+                }
+
+            # Image without prompt: use existing description pipeline
             description = await self.media_client.describe_image(
-                image_base64, mime_type, conversation_id, prompt
+                image_base64, mime_type, conversation_id
             )
 
             if not description:
                 return {
                     "response": "Could not describe the image. Please try again.",
                     "description": "",
+                    "processed_image_base64": None,
+                    "processed_image_mime_type": None,
                 }
 
-            # Step 2: Build message for ADK Runner
-            if prompt:
-                message = f"[User sent an image with question: {prompt}]\n\nImage description: {description}"
-            else:
-                message = f"[User sent an image]\n\nImage description: {description}"
+            message = f"[User sent an image]\n\nImage description: {description}"
 
-            # Step 3: Process through ADK Runner (preserves context)
+            # Process through ADK Runner (preserves context)
             response = await self.process(conversation_id, message)
 
             return {
                 "response": response,
                 "description": description,
+                "processed_image_base64": None,
+                "processed_image_mime_type": None,
             }
         except RuntimeError:
             raise
