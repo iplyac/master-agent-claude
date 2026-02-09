@@ -29,6 +29,7 @@ def media_client(mock_genai_client):
             image_model_name="gemini-3-pro-image-preview",
         )
     client.client = mock_genai_client
+    client.image_client = mock_genai_client
     return client
 
 

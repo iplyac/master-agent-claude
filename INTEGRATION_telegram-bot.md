@@ -54,6 +54,7 @@ Telegram-bot использует следующие endpoints:
 |----------|--------|------------|
 | `/api/chat` | POST | Текстовые сообщения |
 | `/api/voice` | POST | Голосовые сообщения |
+| `/api/image` | POST | Изображения (описание + обработка через Nano Banana Pro) |
 
 #### POST /api/chat
 
@@ -104,6 +105,56 @@ Telegram-bot использует следующие endpoints:
   "transcription": "Расшифровка голоса"
 }
 ```
+
+#### POST /api/image
+
+**Request:**
+```json
+{
+  "conversation_id": "tg_dm_234759359",
+  "image_base64": "<base64-encoded-image>",
+  "mime_type": "image/jpeg",
+  "prompt": "Убери фон с этого изображения",
+  "metadata": {
+    "telegram": {
+      "chat_id": 234759359,
+      "user_id": 123456,
+      "chat_type": "private"
+    }
+  }
+}
+```
+
+**Response (200) — без промпта (описание):**
+```json
+{
+  "response": "На изображении кот сидит на подоконнике...",
+  "description": "Рыжий полосатый кот на деревянном подоконнике.",
+  "processed_image_base64": null,
+  "processed_image_mime_type": null
+}
+```
+
+**Response (200) — с промптом (обработка через Nano Banana Pro):**
+```json
+{
+  "response": "Вот изображение с убранным фоном.",
+  "description": "Я убрал фон, оставив только кота.",
+  "processed_image_base64": "<base64-обработанное-изображение>",
+  "processed_image_mime_type": "image/png"
+}
+```
+
+**Поведение:**
+- **Без `prompt`** — изображение описывается через Gemini, возвращается текст
+- **С `prompt`** — изображение обрабатывается через Nano Banana Pro (Gemini 3 Pro Image), возвращается текст + обработанное изображение
+- `processed_image_base64` = null если модель не вернула изображение
+
+**Telegram-bot должен:**
+1. Передавать `caption` фото как `prompt`
+2. Проверять `processed_image_base64` в ответе
+3. Если есть — отправлять обработанное изображение как фото с текстом в caption
+4. Если нет — отправлять текстовый ответ
 
 ## Почему НЕ используется Internal DNS
 

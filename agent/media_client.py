@@ -38,6 +38,12 @@ class MediaClient:
             project=project,
             location=location,
         )
+        # Separate client for image model — preview models require the global endpoint
+        self.image_client = genai.Client(
+            vertexai=True,
+            project=project,
+            location="global",
+        )
 
     async def transcribe(self, audio_base64: str, mime_type: str, session_id: str) -> str:
         """Transcribe audio to text.
@@ -203,7 +209,7 @@ class MediaClient:
                 )
             ]
 
-            response = await self.client.aio.models.generate_content(
+            response = await self.image_client.aio.models.generate_content(
                 model=self.image_model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(

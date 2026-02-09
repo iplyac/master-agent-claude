@@ -146,11 +146,23 @@ Content-Type: application/json
 
 ### Response
 
-**Success (200):**
+**Success — image without prompt (200):**
 ```json
 {
   "response": "This image shows a cat sitting on a windowsill...",
-  "description": "A tabby cat with orange and white fur sitting on a wooden windowsill, looking outside through a glass window."
+  "description": "A tabby cat with orange and white fur sitting on a wooden windowsill, looking outside through a glass window.",
+  "processed_image_base64": null,
+  "processed_image_mime_type": null
+}
+```
+
+**Success — image with prompt, processed by Nano Banana Pro (200):**
+```json
+{
+  "response": "Here is your image with the background removed.",
+  "description": "I've removed the background from your image, keeping only the cat.",
+  "processed_image_base64": "<base64-encoded-processed-image>",
+  "processed_image_mime_type": "image/png"
 }
 ```
 
@@ -168,21 +180,39 @@ Content-Type: application/json
 }
 ```
 
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `response` | string | Agent's text response |
+| `description` | string | Image description or model text output |
+| `processed_image_base64` | string \| null | Base64-encoded processed image (only when prompt provided and model returns an image) |
+| `processed_image_mime_type` | string \| null | MIME type of the processed image (e.g., `image/png`) |
+
 ## Handling Photo Messages in Telegram Bot
 
 Add this handler to process photo messages:
 
 ```python
 import base64
+import io
 import httpx
-from telegram import Update
+from telegram import InputFile, Update
 from telegram.ext import ContextTypes, MessageHandler, filters
 
 MASTER_AGENT_URL = "https://your-master-agent-url.run.app"
 
+# Mapping MIME types to file extensions for Telegram
+MIME_TO_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle photo messages - send to master-agent for recognition."""
+    """Handle photo messages - send to master-agent for recognition or processing."""
     chat_id = update.effective_chat.id
     chat_type = update.effective_chat.type
     user_id = update.effective_user.id
@@ -221,11 +251,25 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                         }
                     },
                 },
-                timeout=60.0,
+                timeout=120.0,  # Nano Banana Pro can take 5-15s
             )
             response.raise_for_status()
             data = response.json()
             text = data.get("response", "Could not process the image.")
+
+            # If the model returned a processed image, send it back
+            processed_image_b64 = data.get("processed_image_base64")
+            processed_mime = data.get("processed_image_mime_type")
+
+            if processed_image_b64 and processed_mime:
+                image_bytes = base64.b64decode(processed_image_b64)
+                ext = MIME_TO_EXT.get(processed_mime, "png")
+                await update.message.reply_photo(
+                    photo=InputFile(io.BytesIO(image_bytes), filename=f"processed.{ext}"),
+                    caption=text[:1024] if text else None,  # Telegram caption limit
+                )
+                return
+
         except httpx.HTTPError as e:
             text = f"Failed to process image: {e}"
 
@@ -240,5 +284,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 - Telegram compresses photos before sending, so image quality may vary
 - The `prompt` field is optional - if omitted, the agent will describe the image
-- Use the photo caption as `prompt` to ask specific questions about the image
+- Use the photo caption as `prompt` to ask specific questions about the image or request processing (e.g., "Remove the background", "Make it black and white")
+- When a prompt is provided, the image is processed by Nano Banana Pro (Gemini 3 Pro Image) which can return a modified image
+- If the model returns a processed image, the bot sends it back as a photo with the text response as caption
+- If no processed image is returned (description-only or model didn't generate one), the bot sends a text reply
 - Session context is preserved - the agent remembers previous images in the conversation
+- Timeout is set to 120s to accommodate Nano Banana Pro processing time (5-15s typical)
