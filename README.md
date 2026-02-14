@@ -9,9 +9,10 @@ Designed to integrate seamlessly with the Telegram Bot service.
 - **Google ADK**: Agent Development Kit for conversation management
 - **Vertex AI**: Gemini models via service account authentication (no API keys)
 - **Prompt Management**: System prompts loaded from Vertex AI, reloadable at runtime
-- **Session management**: In-memory sessions (not persisted across restarts)
+- **Session management**: In-memory sessions by default; Vertex AI Sessions when Agent Engine is configured
+- **Memory Bank**: Optional long-term memory via Vertex AI Memory Bank (cross-session persistence)
 - **Voice support**: Audio transcription via Vertex AI multimodal API
-- **Image support**: Image recognition and description via Vertex AI multimodal API
+- **Image support**: Image recognition, description, and image generation/editing via Gemini 3 Pro Image Preview
 - **Structured logging**: JSON logs with Cloud Trace integration
 
 ## Prerequisites
@@ -103,11 +104,20 @@ Request:
 }
 ```
 
-Response:
+Response (without prompt — description only):
 ```json
 {
   "response": "This image shows a cat sitting on a windowsill...",
   "description": "A tabby cat with orange fur sitting on a wooden windowsill."
+}
+```
+
+Response (with prompt — image processing via Gemini 3 Pro Image Preview):
+```json
+{
+  "response": "Here is your image with the requested changes.",
+  "processed_image_base64": "<base64-encoded-result-image>",
+  "processed_image_mime_type": "image/png"
 }
 ```
 
@@ -244,6 +254,8 @@ sudo chown -R $(whoami) ~/.config/gcloud
 | GCP_LOCATION              | No       | europe-west4       | Vertex AI location                 |
 | GOOGLE_GENAI_USE_VERTEXAI | Yes      | -                  | Must be `true` for Vertex AI       |
 | AGENT_PROMPT_ID           | No       | -                  | Vertex AI Prompt ID for dynamic loading |
+| AGENT_ENGINE_ID           | No       | -                  | Agent Engine ID for Vertex AI Sessions & Memory Bank |
+| IMAGE_MODEL_NAME          | No       | gemini-3-pro-image-preview | Model for image generation/editing |
 | REGION                    | No       | europe-west4       | Deployment region                  |
 | SERVICE_NAME              | No       | ai-agent           | Cloud Run service name             |
 | LOG_LEVEL                 | No       | INFO               | Logging level                      |

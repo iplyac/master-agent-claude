@@ -14,6 +14,7 @@ from google.adk.sessions import InMemorySessionService
 
 from agent.adk_agent import create_agent, load_prompt_from_vertex_ai
 from agent.config import (
+    get_agent_engine_id,
     get_image_model_name,
     get_location,
     get_log_level,
@@ -115,18 +116,43 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("AGENT_PROMPT_ID not configured, using default instruction")
 
-    # Create ADK components
-    agent = create_agent(model_name=model_name, instruction=instruction)
+    # Create session service and optional memory service
+    agent_engine_id = get_agent_engine_id()
+    memory_service = None
+    agent_tools = None
 
-    # Use InMemorySessionService for now (VertexAiSessionService requires ReasoningEngine deployment)
-    # TODO: Implement DatabaseSessionService with Cloud SQL for persistence
-    logger.info("Using InMemorySessionService (sessions not persisted across restarts)")
-    session_service = InMemorySessionService()
+    if agent_engine_id:
+        from google.adk.sessions import VertexAiSessionService
+        from google.adk.memory import VertexAiMemoryBankService
+        from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+
+        logger.info(
+            "Using VertexAiSessionService + MemoryBank: agent_engine_id=%s",
+            agent_engine_id,
+        )
+        session_service = VertexAiSessionService(
+            project=project_id,
+            location=location,
+            agent_engine_id=agent_engine_id,
+        )
+        memory_service = VertexAiMemoryBankService(
+            project=project_id,
+            location=location,
+            agent_engine_id=agent_engine_id,
+        )
+        agent_tools = [PreloadMemoryTool()]
+    else:
+        logger.info("Using InMemorySessionService (sessions not persisted across restarts)")
+        session_service = InMemorySessionService()
+
+    # Create ADK components
+    agent = create_agent(model_name=model_name, instruction=instruction, tools=agent_tools)
 
     runner = Runner(
         app_name="master_agent",
         agent=agent,
         session_service=session_service,
+        **({"memory_service": memory_service} if memory_service else {}),
     )
 
     # Create media client for audio/image processing (uses Vertex AI)
@@ -135,12 +161,13 @@ async def lifespan(app: FastAPI):
     media_client = MediaClient(project_id, location, model_name, image_model_name)
 
     # Create processor with ADK Runner
-    processor = MessageProcessor(runner, session_service, media_client)
+    processor = MessageProcessor(runner, session_service, media_client, memory_service)
 
     # Store in app state (mutable for reload support)
     app.state.runner = runner
     app.state.agent = agent
     app.state.session_service = session_service
+    app.state.memory_service = memory_service
     app.state.processor = processor
     app.state.media_client = media_client
     app.state.project_id = project_id
@@ -231,18 +258,24 @@ async def reload_prompt(request: Request):
                 )
 
             # Create new agent and runner
-            new_agent = create_agent(model_name=model_name, instruction=instruction)
+            memory_svc = request.app.state.memory_service
+            tools = None
+            if memory_svc:
+                from google.adk.tools.preload_memory_tool import PreloadMemoryTool
+                tools = [PreloadMemoryTool()]
+            new_agent = create_agent(model_name=model_name, instruction=instruction, tools=tools)
             new_runner = Runner(
                 app_name="master_agent",
                 agent=new_agent,
                 session_service=session_service,
+                **({"memory_service": memory_svc} if memory_svc else {}),
             )
 
             # Update app state atomically
             request.app.state.agent = new_agent
             request.app.state.runner = new_runner
             request.app.state.processor = MessageProcessor(
-                new_runner, session_service, request.app.state.media_client
+                new_runner, session_service, request.app.state.media_client, memory_svc
             )
 
             logger.info("Prompt reloaded successfully: length=%d", len(instruction))

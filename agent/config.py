@@ -115,3 +115,8 @@ def get_prompt_id() -> Optional[str]:
 def get_image_model_name() -> str:
     """Return image processing model name or default."""
     return os.getenv("IMAGE_MODEL_NAME") or "gemini-3-pro-image-preview"
+
+
+def get_agent_engine_id() -> Optional[str]:
+    """Return Agent Engine ID for Vertex AI Sessions and Memory Bank."""
+    return os.getenv("AGENT_ENGINE_ID") or None

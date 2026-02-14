@@ -22,6 +22,7 @@ class MessageProcessor:
         runner: Runner,
         session_service: BaseSessionService,
         media_client: Optional[MediaClient] = None,
+        memory_service=None,
     ):
         """Initialize the processor.
 
@@ -29,10 +30,12 @@ class MessageProcessor:
             runner: ADK Runner for processing text messages.
             session_service: Session service for creating/managing sessions.
             media_client: Optional client for media (voice, image) processing.
+            memory_service: Optional memory service for long-term memory.
         """
         self.runner = runner
         self.session_service = session_service
         self.media_client = media_client
+        self.memory_service = memory_service
 
     async def process(self, conversation_id: str, message: str) -> str:
         """Process a user message and return the agent response.
@@ -102,6 +105,24 @@ class MessageProcessor:
                 session_id,
                 len(response_text),
             )
+
+            # Save session to long-term memory if configured
+            if self.memory_service:
+                try:
+                    session = await self.session_service.get_session(
+                        app_name=APP_NAME,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
+                    if session:
+                        await self.memory_service.add_session_to_memory(session)
+                except Exception as mem_err:
+                    logger.warning(
+                        "Failed to save session to memory: session_id=%s, error=%s",
+                        session_id,
+                        mem_err,
+                    )
+
             return response_text
 
         except Exception as e:

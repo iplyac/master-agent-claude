@@ -93,12 +93,14 @@ def load_prompt_from_vertex_ai(project_id: str, location: str, prompt_id: str) -
 def create_agent(
     model_name: str | None = None,
     instruction: str | None = None,
+    tools: list | None = None,
 ) -> Agent:
     """Create and configure an ADK Agent.
 
     Args:
         model_name: The model to use. Defaults to MODEL_NAME env var or gemini-2.0-flash.
         instruction: Custom instruction for the agent. Defaults to built-in instruction.
+        tools: Optional list of tools for the agent (e.g., PreloadMemoryTool).
 
     Returns:
         Configured ADK Agent instance.
@@ -109,9 +111,13 @@ def create_agent(
     if instruction is None:
         instruction = os.environ.get("AGENT_INSTRUCTION", DEFAULT_INSTRUCTION)
 
-    return Agent(
+    kwargs = dict(
         name=AGENT_NAME,
         model=model_name,
         instruction=instruction,
         description="Master agent for handling user conversations",
     )
+    if tools:
+        kwargs["tools"] = tools
+
+    return Agent(**kwargs)

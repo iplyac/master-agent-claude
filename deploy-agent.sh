@@ -72,6 +72,9 @@ fi
 if [[ -n "${MODEL_ENDPOINT:-}" ]]; then
     ENV_VARS="${ENV_VARS},MODEL_ENDPOINT=${MODEL_ENDPOINT}"
 fi
+if [[ -n "${AGENT_ENGINE_ID:-}" ]]; then
+    ENV_VARS="${ENV_VARS},AGENT_ENGINE_ID=${AGENT_ENGINE_ID}"
+fi
 
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
