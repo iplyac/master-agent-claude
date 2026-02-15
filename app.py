@@ -329,14 +329,9 @@ async def session_info(request: Request):
                 found = sessions_response.sessions[0]
                 session_id = found.id
                 session_exists = True
-                # list_sessions returns summaries without events — fetch full session
-                full_session = await session_service.get_session(
-                    app_name="master_agent",
-                    user_id=user_id,
-                    session_id=session_id,
-                )
-                if full_session and hasattr(full_session, "events"):
-                    message_count = len(full_session.events)
+                # Events count from list_sessions summary (may be 0 if not populated)
+                if hasattr(found, "events") and found.events:
+                    message_count = len(found.events)
         else:
             # InMemory: session_id == user_id
             session = await session_service.get_session(
@@ -346,7 +341,8 @@ async def session_info(request: Request):
             )
             session_exists = session is not None
             message_count = len(session.events) if session and hasattr(session, "events") else None
-    except Exception:
+    except Exception as e:
+        logger.warning("Session info error: conversation_id=%s, error=%s", conversation_id, e)
         session_exists = False
         message_count = None
 
