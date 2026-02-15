@@ -326,10 +326,17 @@ async def session_info(request: Request):
                 user_id=user_id,
             )
             if sessions_response and sessions_response.sessions:
-                session = sessions_response.sessions[0]
-                session_id = session.id
+                found = sessions_response.sessions[0]
+                session_id = found.id
                 session_exists = True
-                message_count = len(session.events) if hasattr(session, "events") else None
+                # list_sessions returns summaries without events — fetch full session
+                full_session = await session_service.get_session(
+                    app_name="master_agent",
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                if full_session and hasattr(full_session, "events"):
+                    message_count = len(full_session.events)
         else:
             # InMemory: session_id == user_id
             session = await session_service.get_session(
