@@ -1,24 +1,39 @@
-# AI Agent Service
+# Master Agent
 
 AI agent service deployed on Google Cloud Run. Accepts user messages via HTTP,
-processes them through Google ADK with Gemini LLM on Vertex AI, and returns text responses.
-Designed to integrate seamlessly with the Telegram Bot service.
+processes them through Google ADK with Gemini on Vertex AI, and returns text responses.
+Designed to integrate with the Telegram Bot service.
 
 ## Architecture
 
-- **Google ADK**: Agent Development Kit for conversation management
-- **Vertex AI**: Gemini models via service account authentication (no API keys)
-- **Prompt Management**: System prompts loaded from Vertex AI, reloadable at runtime
-- **Session management**: In-memory sessions by default; Vertex AI Sessions when Agent Engine is configured
-- **Memory Bank**: Optional long-term memory via Vertex AI Memory Bank (cross-session persistence)
-- **Voice support**: Audio transcription via Vertex AI multimodal API
-- **Image support**: Image recognition, description, and image generation/editing via Gemini 3 Pro Image Preview
+- **Google ADK** (`google-adk`): Agent Development Kit — runner, sessions, memory
+- **Vertex AI**: Gemini models via service account authentication (no API keys needed)
+- **Prompt Management**: System prompts loaded from Vertex AI Prompt Management, reloadable at runtime via `/api/reload-prompt`
+- **Sessions**: In-memory by default; persistent Vertex AI Sessions when Agent Engine is configured
+- **Memory Bank**: Optional long-term memory via Vertex AI Memory Bank (cross-session context)
+- **Voice**: Audio transcription via Gemini multimodal API
+- **Image**: Recognition, description, and image generation/editing via Gemini 3 Pro Image Preview
 - **Structured logging**: JSON logs with Cloud Trace integration
+
+## Project Structure
+
+```
+app.py                  # FastAPI application, lifespan, API endpoints
+secret_manager.py       # Google Secret Manager client
+agent/
+  adk_agent.py          # ADK Agent factory, Vertex AI prompt loader
+  config.py             # Environment variable helpers
+  media_client.py       # Voice transcription & image processing (genai.Client)
+  models.py             # Pydantic request/response models
+  processor.py          # MessageProcessor — ADK Runner orchestration
+tests/                  # pytest + pytest-asyncio tests
+docs/                   # Integration docs
+```
 
 ## Prerequisites
 
-- Docker
-- `gcloud` CLI (authenticated: `gcloud auth login`)
+- Python 3.11+
+- `gcloud` CLI (authenticated: `gcloud auth application-default login`)
 - GCP project with Vertex AI API enabled
 - Service account with `Vertex AI User` role
 
@@ -104,6 +119,8 @@ Request:
 }
 ```
 
+Supported MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
+
 Response (without prompt — description only):
 ```json
 {
@@ -142,8 +159,6 @@ Response:
 
 ### GET /api/prompt
 
-Get the current system prompt.
-
 Response:
 ```json
 {
@@ -154,23 +169,15 @@ Response:
 
 ### POST /api/reload-prompt
 
-Reload the system prompt from Vertex AI Prompt Management without restarting the service.
+Reload system prompt from Vertex AI Prompt Management without restarting the service. Requires `AGENT_PROMPT_ID` to be configured.
 
 Request: No body required.
 
-Response (success):
+Response:
 ```json
 {
   "status": "ok",
   "prompt_length": 207
-}
-```
-
-Response (error - prompt not configured):
-```json
-{
-  "status": "error",
-  "error": "AGENT_PROMPT_ID not configured"
 }
 ```
 
@@ -186,19 +193,24 @@ Response (error - prompt not configured):
    cp .env.example .env
    ```
 
-3. Set environment variables in `.env`:
+3. Set your GCP project in `.env`:
    ```
    GCP_PROJECT_ID=your-gcp-project
    GCP_LOCATION=europe-west4
    GOOGLE_GENAI_USE_VERTEXAI=true
    ```
 
-4. Run locally:
+4. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. Run:
    ```bash
    python -m uvicorn app:app --host 0.0.0.0 --port 8080
    ```
 
-5. Verify:
+6. Verify:
    ```bash
    curl http://localhost:8080/health
    # {"status":"ok"}
@@ -207,6 +219,12 @@ Response (error - prompt not configured):
      -H 'Content-Type: application/json' \
      -d '{"conversation_id":"test_123","message":"hello"}'
    ```
+
+## Testing
+
+```bash
+pytest tests/
+```
 
 ## Cloud Run Deployment
 
@@ -235,44 +253,32 @@ gcloud run deploy master-agent \
 
 ### Important: Terminal environment
 
-**WARNING**: Do not deploy from IDE-embedded terminals (VS Code, IntelliJ, etc.).
+Do not deploy from IDE-embedded terminals (VS Code, IntelliJ, etc.).
 They may have restricted environments that cause authentication issues.
 Use a standalone terminal application.
 
-If you encounter gcloud permission errors:
-```bash
-sudo chown -R $(whoami) ~/.config/gcloud
-```
-
 ## Environment Variables
 
-| Variable                  | Required | Default            | Description                        |
-|---------------------------|----------|--------------------|------------------------------------|
-| PORT                      | No       | 8080               | Server port (Cloud Run injects)    |
-| MODEL_NAME                | No       | gemini-2.0-flash   | LLM model name                     |
-| GCP_PROJECT_ID            | No       | -                  | GCP project ID                     |
-| GCP_LOCATION              | No       | europe-west4       | Vertex AI location                 |
-| GOOGLE_GENAI_USE_VERTEXAI | Yes      | -                  | Must be `true` for Vertex AI       |
-| AGENT_PROMPT_ID           | No       | -                  | Vertex AI Prompt ID for dynamic loading |
-| AGENT_ENGINE_ID           | No       | -                  | Agent Engine ID for Vertex AI Sessions & Memory Bank |
-| IMAGE_MODEL_NAME          | No       | gemini-3-pro-image-preview | Model for image generation/editing |
-| REGION                    | No       | europe-west4       | Deployment region                  |
-| SERVICE_NAME              | No       | ai-agent           | Cloud Run service name             |
-| LOG_LEVEL                 | No       | INFO               | Logging level                      |
+| Variable                  | Required | Default                  | Description                                         |
+|---------------------------|----------|--------------------------|-----------------------------------------------------|
+| GCP_PROJECT_ID            | Yes      | -                        | GCP project ID                                      |
+| GCP_LOCATION              | No       | europe-west4             | Vertex AI location                                  |
+| GOOGLE_GENAI_USE_VERTEXAI | Yes      | -                        | Must be `true` for Vertex AI backend                |
+| PORT                      | No       | 8080                     | Server port (Cloud Run injects automatically)       |
+| MODEL_NAME                | No       | gemini-2.0-flash         | LLM model name                                      |
+| IMAGE_MODEL_NAME          | No       | gemini-3-pro-image-preview | Model for image generation/editing                |
+| AGENT_PROMPT_ID           | No       | -                        | Vertex AI Prompt dataset ID for dynamic prompt loading |
+| AGENT_ENGINE_ID           | No       | -                        | Agent Engine ID — enables Vertex AI Sessions & Memory Bank |
+| REGION                    | No       | europe-west4             | Deployment region                                   |
+| SERVICE_NAME              | No       | ai-agent                 | Service name for logging                            |
+| LOG_LEVEL                 | No       | INFO                     | Logging level                                       |
 
 ## Security
 
-- No API keys required - uses GCP service account authentication
+- No API keys — uses GCP service account authentication via Vertex AI
 - Logs never contain sensitive message content
-- Tokens are masked in error messages
+- API keys/tokens are masked in error messages
 
 ## Documentation
 
-- [Telegram Bot Integration](docs/telegram-bot-integration.md) - Session info endpoint and `/sessioninfo` command
-
-## Testing
-
-```bash
-pip install -r requirements.txt
-pytest tests/
-```
+- [Telegram Bot Integration](docs/telegram-bot-integration.md)
