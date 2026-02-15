@@ -16,9 +16,15 @@ def mock_runner():
 def mock_session_service():
     service = MagicMock()
     session = MagicMock()
+    session.id = "server-generated-id"
     session.events = []
+    # For InMemory path (no memory_service)
     service.get_session = AsyncMock(return_value=session)
     service.create_session = AsyncMock()
+    # For Vertex path (with memory_service) — list_sessions returns sessions list
+    sessions_response = MagicMock()
+    sessions_response.sessions = [session]
+    service.list_sessions = AsyncMock(return_value=sessions_response)
     return service
 
 

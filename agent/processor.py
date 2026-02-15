@@ -37,6 +37,46 @@ class MessageProcessor:
         self.media_client = media_client
         self.memory_service = memory_service
 
+    async def _get_or_create_session(self, user_id: str) -> str:
+        """Find existing session or create a new one for the user.
+
+        VertexAiSessionService does not support custom session IDs,
+        so we use list_sessions to find existing ones and let the
+        service auto-generate IDs on creation.
+
+        For InMemorySessionService, we use conversation_id directly
+        as session_id for backwards compatibility.
+        """
+        # InMemorySessionService: use user_id as session_id directly
+        if not self.memory_service:
+            existing = await self.session_service.get_session(
+                app_name=APP_NAME,
+                user_id=user_id,
+                session_id=user_id,
+            )
+            if existing is None:
+                await self.session_service.create_session(
+                    app_name=APP_NAME,
+                    user_id=user_id,
+                    session_id=user_id,
+                )
+            return user_id
+
+        # VertexAiSessionService: list sessions to find existing one
+        sessions_response = await self.session_service.list_sessions(
+            app_name=APP_NAME,
+            user_id=user_id,
+        )
+        if sessions_response and sessions_response.sessions:
+            return sessions_response.sessions[0].id
+
+        # No session found — create one (server generates ID)
+        new_session = await self.session_service.create_session(
+            app_name=APP_NAME,
+            user_id=user_id,
+        )
+        return new_session.id
+
     async def process(self, conversation_id: str, message: str) -> str:
         """Process a user message and return the agent response.
 
@@ -54,23 +94,11 @@ class MessageProcessor:
             return "Empty message received. Please send a text message."
 
         try:
-            # Use conversation_id as both user_id and session_id
-            # This ensures same Telegram chat = same session = context preserved
+            # Use conversation_id as user_id to group sessions per chat
             user_id = conversation_id
-            session_id = conversation_id
 
-            # Ensure session exists (create if not)
-            existing_session = await self.session_service.get_session(
-                app_name=APP_NAME,
-                user_id=user_id,
-                session_id=session_id,
-            )
-            if existing_session is None:
-                await self.session_service.create_session(
-                    app_name=APP_NAME,
-                    user_id=user_id,
-                    session_id=session_id,
-                )
+            # Find or create session for this user
+            session_id = await self._get_or_create_session(user_id)
 
             # Create content for the message
             content = types.Content(

@@ -311,23 +311,40 @@ async def session_info(request: Request):
 
     conversation_id = info_request.conversation_id
     session_service = request.app.state.session_service
+    memory_service = request.app.state.memory_service
 
     # Check if session exists
+    session_id = conversation_id
+    session_exists = False
+    message_count = None
     try:
-        session = await session_service.get_session(
-            app_name="master_agent",
-            user_id=conversation_id,
-            session_id=conversation_id,
-        )
-        session_exists = session is not None
-        message_count = len(session.events) if session and hasattr(session, "events") else None
+        if memory_service:
+            # VertexAi: list sessions to find by user_id
+            sessions_response = await session_service.list_sessions(
+                app_name="master_agent",
+                user_id=conversation_id,
+            )
+            if sessions_response and sessions_response.sessions:
+                session = sessions_response.sessions[0]
+                session_id = session.id
+                session_exists = True
+                message_count = len(session.events) if hasattr(session, "events") else None
+        else:
+            # InMemory: session_id == conversation_id
+            session = await session_service.get_session(
+                app_name="master_agent",
+                user_id=conversation_id,
+                session_id=conversation_id,
+            )
+            session_exists = session is not None
+            message_count = len(session.events) if session and hasattr(session, "events") else None
     except Exception:
         session_exists = False
         message_count = None
 
     response = SessionInfoResponse(
         conversation_id=conversation_id,
-        session_id=conversation_id,
+        session_id=session_id,
         session_exists=session_exists,
         message_count=message_count,
     )
