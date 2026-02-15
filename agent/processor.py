@@ -1,6 +1,7 @@
 """Message processor using ADK Runner."""
 
 import logging
+import re
 from typing import Optional
 
 from google.adk.runners import Runner
@@ -12,6 +13,17 @@ from agent.media_client import MediaClient
 logger = logging.getLogger(__name__)
 
 APP_NAME = "master_agent"
+
+# Vertex AI resource names only allow letters, digits, and hyphens
+_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9-]")
+
+
+def _sanitize_id(raw_id: str) -> str:
+    """Sanitize an ID for use with Vertex AI resource names.
+
+    Replaces invalid characters (underscores, etc.) with hyphens.
+    """
+    return _SANITIZE_RE.sub("-", raw_id)
 
 
 class MessageProcessor:
@@ -94,8 +106,8 @@ class MessageProcessor:
             return "Empty message received. Please send a text message."
 
         try:
-            # Use conversation_id as user_id to group sessions per chat
-            user_id = conversation_id
+            # Sanitize conversation_id for Vertex AI resource name compatibility
+            user_id = _sanitize_id(conversation_id)
 
             # Find or create session for this user
             session_id = await self._get_or_create_session(user_id)

@@ -27,7 +27,7 @@ from agent.config import (
     mask_token,
 )
 from agent.models import ChatRequest, ImageRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
-from agent.processor import MessageProcessor
+from agent.processor import MessageProcessor, _sanitize_id
 from agent.media_client import MediaClient
 
 # Cloud Trace context variable
@@ -314,6 +314,7 @@ async def session_info(request: Request):
     memory_service = request.app.state.memory_service
 
     # Check if session exists
+    user_id = _sanitize_id(conversation_id)
     session_id = conversation_id
     session_exists = False
     message_count = None
@@ -322,7 +323,7 @@ async def session_info(request: Request):
             # VertexAi: list sessions to find by user_id
             sessions_response = await session_service.list_sessions(
                 app_name="master_agent",
-                user_id=conversation_id,
+                user_id=user_id,
             )
             if sessions_response and sessions_response.sessions:
                 session = sessions_response.sessions[0]
@@ -330,11 +331,11 @@ async def session_info(request: Request):
                 session_exists = True
                 message_count = len(session.events) if hasattr(session, "events") else None
         else:
-            # InMemory: session_id == conversation_id
+            # InMemory: session_id == user_id
             session = await session_service.get_session(
                 app_name="master_agent",
-                user_id=conversation_id,
-                session_id=conversation_id,
+                user_id=user_id,
+                session_id=user_id,
             )
             session_exists = session is not None
             message_count = len(session.events) if session and hasattr(session, "events") else None
