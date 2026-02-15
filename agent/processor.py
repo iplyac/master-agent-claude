@@ -48,6 +48,8 @@ class MessageProcessor:
         self.session_service = session_service
         self.media_client = media_client
         self.memory_service = memory_service
+        # Cache: conversation_id -> vertex session_id (avoids list_sessions on every message)
+        self._session_cache: dict[str, str] = {}
 
     async def _get_or_create_session(self, user_id: str) -> str:
         """Find existing session or create a new one for the user.
@@ -74,19 +76,26 @@ class MessageProcessor:
                 )
             return user_id
 
+        # Check cache first
+        if user_id in self._session_cache:
+            return self._session_cache[user_id]
+
         # VertexAiSessionService: list sessions to find existing one
         sessions_response = await self.session_service.list_sessions(
             app_name=APP_NAME,
             user_id=user_id,
         )
         if sessions_response and sessions_response.sessions:
-            return sessions_response.sessions[0].id
+            sid = sessions_response.sessions[0].id
+            self._session_cache[user_id] = sid
+            return sid
 
         # No session found — create one (server generates ID)
         new_session = await self.session_service.create_session(
             app_name=APP_NAME,
             user_id=user_id,
         )
+        self._session_cache[user_id] = new_session.id
         return new_session.id
 
     async def process(self, conversation_id: str, message: str) -> str:
