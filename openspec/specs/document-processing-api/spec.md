@@ -39,9 +39,13 @@ After uploading to GCS, the system SHALL call the docling agent's `POST /api/pro
 - **WHEN** the document is successfully uploaded to GCS
 - **THEN** the system sends `{"document_url": "gs://docling-documents/input/..."}` to the docling agent URL
 
-#### Scenario: Docling agent response returned to client
-- **WHEN** the docling agent returns HTTP 200 with `content` and `metadata`
-- **THEN** the system returns the `content` and `metadata` to the original caller
+#### Scenario: Docling agent response returned to client with result_gcs_uri
+- **WHEN** the docling agent returns HTTP 200 with `content`, `metadata`, and `result_gcs_uri`
+- **THEN** the system returns `content`, `metadata`, `gcs_uri` (input document URI), and `result_gcs_uri` to the original caller
+
+#### Scenario: Docling agent response returned without result_gcs_uri
+- **WHEN** the docling agent returns HTTP 200 with `content` and `metadata` but no `result_gcs_uri`
+- **THEN** the system returns `content`, `metadata`, and `gcs_uri`; `result_gcs_uri` is omitted or null
 
 #### Scenario: Docling agent unavailable returns 503
 - **WHEN** `DOCLING_AGENT_URL` is not configured

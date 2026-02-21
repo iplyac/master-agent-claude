@@ -23,7 +23,25 @@
       "Bash(gcloud projects get-iam-policy:*)",
       "Bash(git add:*)",
       "Bash(gcloud run services describe:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "WebFetch(domain:google.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.google.com)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(pip3 install:*)",
+      "Bash(AGENT_ENGINE_ID=5316939164761980928 bash:*)",
+      "Bash(gcloud run services update:*)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude add deploy-agent.sh cloudbuild.yaml)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude commit -m \"$\\(cat <<''EOF''\nFix deploy scripts to include all required env vars\n\ndeploy-agent.sh was missing GCP_PROJECT_ID, GCP_LOCATION,\nGOOGLE_GENAI_USE_VERTEXAI, AGENT_PROMPT_ID — causing them\nto be dropped on redeploy \\(--set-env-vars replaces all\\).\nAlso set AGENT_ENGINE_ID default in both scripts.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude push)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude add agent/processor.py app.py tests/test_processor_memory.py)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude commit -m \"$\\(cat <<''EOF''\nFix VertexAi session ID: use list_sessions instead of custom IDs\n\nVertexAiSessionService rejects custom session IDs like\n\"tg_dm_234759359\". Now uses list_sessions to find existing\nsessions and lets server auto-generate IDs on creation.\nInMemorySessionService path unchanged for backwards compatibility.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude add agent/processor.py app.py)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude commit -m \"$\\(cat <<''EOF''\nSanitize conversation IDs for Vertex AI compatibility\n\nReplaces underscores and other invalid characters with hyphens\nin user_id before passing to VertexAiSessionService. Telegram\nsends IDs like tg_dm_234759359 which become tg-dm-234759359.\nNo changes needed in Telegram bot.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude add app.py)",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude commit -m \"$\\(cat <<''EOF''\nFix session-info message count: fetch full session for events\n\nlist_sessions returns summaries without events, so message_count\nwas always 0. Now calls get_session with the found session_id\nto retrieve full event history.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /Users/iosifplyats/Documents/cursor/agents/master-agent-claude commit -m \"$\\(cat <<''EOF''\nFix session-info: skip slow get_session, add error logging\n\nFetching full session with all events was slow/unreliable.\nNow uses summary from list_sessions. Also logs errors instead\nof silently swallowing them.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

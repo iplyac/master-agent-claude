@@ -742,11 +742,13 @@ async def document(request: Request):
     content = result.get("content", "")
     raw_metadata = result.get("metadata")
     doc_metadata = DocumentMetadata(**raw_metadata) if raw_metadata else None
+    result_gcs_uri = result.get("result_gcs_uri")
 
     return DocumentResponse(
         content=content,
         metadata=doc_metadata,
         gcs_uri=gcs_uri,
+        result_gcs_uri=result_gcs_uri,
     ).model_dump()
 
 

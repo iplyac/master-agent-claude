@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 
 VALID_DOC_BASE64 = base64.b64encode(b"%PDF-1.4 fake pdf content").decode()
 GCS_URI = "gs://docling-documents/input/conv1/1700000000000_report.pdf"
+RESULT_GCS_URI = "gs://docling-documents/results/conv1/1700000000000_report.md"
 
 
 @pytest.fixture
@@ -18,6 +19,7 @@ def mock_docling_client():
         return_value={
             "content": "# Report\n\nExtracted content",
             "metadata": {"format": "markdown", "pages": 3},
+            "result_gcs_uri": RESULT_GCS_URI,
         }
     )
     return client
@@ -69,12 +71,44 @@ async def test_document_endpoint_success(app_with_docling, mock_docling_client, 
         )
     assert response.status_code == 200
     data = response.json()
-    assert "content" in data
     assert data["content"] == "# Report\n\nExtracted content"
-    assert "gcs_uri" in data
     assert data["gcs_uri"] == GCS_URI
+    assert data["result_gcs_uri"] == RESULT_GCS_URI
     mock_docling_gcs_client.upload_document.assert_called_once()
     mock_docling_client.process_document.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_document_endpoint_success_without_result_gcs_uri(
+    mock_docling_gcs_client,
+):
+    """result_gcs_uri is null when docling agent does not return it."""
+    from app import app
+
+    client = MagicMock()
+    client.process_document = AsyncMock(
+        return_value={
+            "content": "# Report",
+            "metadata": {"format": "markdown", "pages": 1},
+        }
+    )
+    app.state.docling_client = client
+    app.state.docling_gcs_client = mock_docling_gcs_client
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post(
+            "/api/document",
+            json={
+                "conversation_id": "tg_123456",
+                "document_base64": VALID_DOC_BASE64,
+                "mime_type": "application/pdf",
+                "filename": "report.pdf",
+            },
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["result_gcs_uri"] is None
 
 
 @pytest.mark.asyncio
