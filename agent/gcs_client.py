@@ -58,3 +58,18 @@ class GCSStorageClient:
     async def upload_processed(self, image_bytes: bytes, mime_type: str, session_id: str) -> str | None:
         """Upload processed image to processed/ folder. Returns GCS URI or None on error."""
         return await self._upload(image_bytes, "processed", mime_type, session_id)
+
+    async def upload_document(self, data: bytes, conversation_id: str, filename: str) -> str:
+        """Upload a document to input/ folder. Returns GCS URI. Raises on error.
+
+        Unlike image uploads this is NOT fire-and-forget — a failure prevents
+        the docling agent from being called.
+        """
+        timestamp_ms = int(time.time() * 1000)
+        object_name = f"input/{conversation_id}/{timestamp_ms}_{filename}"
+        loop = asyncio.get_event_loop()
+        uri = await loop.run_in_executor(
+            None, self._upload_bytes_sync, data, object_name, "application/octet-stream"
+        )
+        logger.info("GCS document upload complete: uri=%s", uri)
+        return uri

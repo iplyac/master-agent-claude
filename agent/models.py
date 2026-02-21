@@ -121,6 +121,34 @@ class ImageResponse(BaseModel):
     processed_image_mime_type: Optional[str] = None
 
 
+class DocumentRequest(BaseModel):
+    """Document API request model."""
+
+    conversation_id: str
+    document_base64: str
+    mime_type: str
+    filename: str
+    metadata: Optional[RequestMetadata] = None
+
+
+class DocumentMetadata(BaseModel):
+    """Metadata returned by the docling agent."""
+
+    format: str
+    pages: Optional[int] = None
+    tables_found: Optional[int] = None
+    images_found: Optional[int] = None
+    processing_time_ms: Optional[int] = None
+
+
+class DocumentResponse(BaseModel):
+    """Document API response model."""
+
+    content: str
+    metadata: Optional[DocumentMetadata] = None
+    gcs_uri: str
+
+
 class SessionInfoRequest(BaseModel):
     """Session info API request model."""
 

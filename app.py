@@ -15,6 +15,8 @@ from google.adk.sessions import InMemorySessionService
 from agent.adk_agent import create_agent, load_prompt_from_vertex_ai
 from agent.config import (
     get_agent_engine_id,
+    get_docling_agent_url,
+    get_docling_gcs_bucket,
     get_gcs_bucket_name,
     get_image_model_name,
     get_location,
@@ -27,7 +29,17 @@ from agent.config import (
     get_service_name,
     mask_token,
 )
-from agent.models import ChatRequest, ImageRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
+from agent.models import (
+    ChatRequest,
+    DocumentMetadata,
+    DocumentRequest,
+    DocumentResponse,
+    ImageRequest,
+    SessionInfoRequest,
+    SessionInfoResponse,
+    VoiceRequest,
+)
+from agent.docling_client import DoclingClient
 from agent.processor import MessageProcessor, _sanitize_id
 from agent.media_client import MediaClient
 from agent.gcs_client import GCSStorageClient
@@ -167,6 +179,19 @@ async def lifespan(app: FastAPI):
     gcs_client = GCSStorageClient(gcs_bucket)
     logger.info("GCS image storage enabled: bucket=%s", gcs_bucket)
 
+    # Create GCS client for docling documents
+    docling_gcs_bucket = get_docling_gcs_bucket()
+    docling_gcs_client = GCSStorageClient(docling_gcs_bucket)
+    logger.info("GCS docling storage enabled: bucket=%s", docling_gcs_bucket)
+
+    # Create Docling agent client if URL configured
+    docling_agent_url = get_docling_agent_url()
+    docling_client = DoclingClient(docling_agent_url) if docling_agent_url else None
+    if docling_client:
+        logger.info("Docling agent client enabled: url=%s", docling_agent_url)
+    else:
+        logger.info("DOCLING_AGENT_URL not configured, document processing unavailable")
+
     # Create processor with ADK Runner
     processor = MessageProcessor(runner, session_service, media_client, memory_service, gcs_client)
 
@@ -181,6 +206,8 @@ async def lifespan(app: FastAPI):
     app.state.location = location
     app.state.model_name = model_name
     app.state.gcs_client = gcs_client
+    app.state.docling_gcs_client = docling_gcs_client
+    app.state.docling_client = docling_client
 
     yield
 
@@ -584,6 +611,143 @@ async def image(request: Request):
             status_code=500,
             content={"error": "Agent unavailable, please try again later"},
         )
+
+
+_SUPPORTED_DOCUMENT_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/html",
+    "text/markdown",
+    "text/csv",
+    "image/png",
+    "image/jpeg",
+    "image/tiff",
+    "image/bmp",
+    "image/webp",
+}
+
+
+@app.post("/api/document")
+async def document(request: Request):
+    """
+    Process a document via the Docling agent.
+
+    Request JSON:
+    {
+        "conversation_id": "tg_<chat_id>",
+        "document_base64": "<base64-encoded-document>",
+        "mime_type": "application/pdf",
+        "filename": "report.pdf",
+        "metadata": {"telegram": {"chat_id": 123, "user_id": 456, "chat_type": "private"}}
+    }
+
+    Response JSON:
+    {
+        "content": "<extracted text in markdown>",
+        "metadata": {"format": "markdown", "pages": 5, ...},
+        "gcs_uri": "gs://docling-documents/input/..."
+    }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+    try:
+        doc_request = DocumentRequest(**body)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+    if doc_request.mime_type not in _SUPPORTED_DOCUMENT_MIME_TYPES:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": f"Unsupported mime_type '{doc_request.mime_type}'. "
+                f"Supported: {', '.join(sorted(_SUPPORTED_DOCUMENT_MIME_TYPES))}"
+            },
+        )
+
+    if not doc_request.document_base64:
+        return JSONResponse(status_code=400, content={"error": "document_base64 is required"})
+
+    import base64 as b64
+    try:
+        document_bytes = b64.b64decode(doc_request.document_base64, validate=True)
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid base64 encoding"})
+
+    docling_client: DoclingClient | None = request.app.state.docling_client
+    if docling_client is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Document processing service not configured (DOCLING_AGENT_URL missing)"},
+        )
+
+    conversation_id = doc_request.conversation_id
+    filename = doc_request.filename
+
+    logger.info(
+        "Document API request: conversation_id=%s, filename=%s, mime_type=%s, size=%d",
+        conversation_id,
+        filename,
+        doc_request.mime_type,
+        len(document_bytes),
+    )
+
+    # Step 1: Upload to GCS
+    docling_gcs_client: GCSStorageClient = request.app.state.docling_gcs_client
+    try:
+        gcs_uri = await docling_gcs_client.upload_document(document_bytes, conversation_id, filename)
+    except Exception as e:
+        error_msg = mask_token(str(e))
+        logger.error(
+            "Document GCS upload failed: conversation_id=%s, filename=%s, error=%s",
+            conversation_id,
+            filename,
+            error_msg,
+        )
+        return JSONResponse(status_code=500, content={"error": "Failed to upload document to storage"})
+
+    # Step 2: Call docling agent
+    try:
+        result = await docling_client.process_document(gcs_uri, doc_request.mime_type, filename)
+    except TimeoutError:
+        logger.error(
+            "Docling agent timeout: conversation_id=%s, filename=%s", conversation_id, filename
+        )
+        return JSONResponse(
+            status_code=504, content={"error": "Document processing timed out"}
+        )
+    except RuntimeError as e:
+        error_msg = mask_token(str(e))
+        logger.error(
+            "Docling agent error: conversation_id=%s, filename=%s, error=%s",
+            conversation_id,
+            filename,
+            error_msg,
+        )
+        return JSONResponse(status_code=502, content={"error": f"Document processing failed: {error_msg}"})
+    except Exception as e:
+        error_msg = mask_token(str(e))
+        logger.error(
+            "Document processing unexpected error: conversation_id=%s, filename=%s, error=%s",
+            conversation_id,
+            filename,
+            error_msg,
+        )
+        return JSONResponse(status_code=500, content={"error": "Document processing unavailable"})
+
+    content = result.get("content", "")
+    raw_metadata = result.get("metadata")
+    doc_metadata = DocumentMetadata(**raw_metadata) if raw_metadata else None
+
+    return DocumentResponse(
+        content=content,
+        metadata=doc_metadata,
+        gcs_uri=gcs_uri,
+    ).model_dump()
 
 
 if __name__ == "__main__":

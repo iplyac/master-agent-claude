@@ -125,3 +125,13 @@ def get_agent_engine_id() -> Optional[str]:
 def get_gcs_bucket_name() -> str:
     """Return GCS bucket name for image storage."""
     return os.getenv("GCS_BUCKET_NAME") or "master-agent-images"
+
+
+def get_docling_agent_url() -> Optional[str]:
+    """Return Docling agent Cloud Run URL if configured."""
+    return os.getenv("DOCLING_AGENT_URL") or None
+
+
+def get_docling_gcs_bucket() -> str:
+    """Return GCS bucket name for docling documents."""
+    return os.getenv("GCS_DOCLING_BUCKET") or "docling-documents"
