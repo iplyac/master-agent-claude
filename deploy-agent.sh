@@ -68,7 +68,21 @@ echo "=== Deploying to Cloud Run ==="
 AGENT_PROMPT_ID="${AGENT_PROMPT_ID:-5914177388295487488}"
 AGENT_ENGINE_ID="${AGENT_ENGINE_ID:-5316939164761980928}"
 
-DOCLING_AGENT_URL="${DOCLING_AGENT_URL:-https://docling-agent-3qblthn7ba-ez.a.run.app}"
+# Resolve DOCLING_AGENT_URL dynamically from Cloud Run (override via env if needed)
+if [[ -z "${DOCLING_AGENT_URL:-}" ]]; then
+    echo "Fetching docling-agent URL from Cloud Run..."
+    DOCLING_AGENT_URL=$(gcloud run services describe docling-agent \
+        --project="${PROJECT_ID}" \
+        --region="${REGION}" \
+        --format="value(status.url)" \
+        --quiet 2>/dev/null || echo "")
+    if [[ -z "${DOCLING_AGENT_URL}" ]]; then
+        echo "WARNING: docling-agent service not found, DOCLING_AGENT_URL will not be set"
+    else
+        echo "Docling agent URL: ${DOCLING_AGENT_URL}"
+    fi
+fi
+
 VPC_NETWORK="${VPC_NETWORK:-default}"
 VPC_SUBNET="${VPC_SUBNET:-default}"
 VPC_ROUTER="${VPC_ROUTER:-nat-router}"
@@ -109,7 +123,9 @@ ENV_VARS="${ENV_VARS},GOOGLE_GENAI_USE_VERTEXAI=true"
 ENV_VARS="${ENV_VARS},AGENT_PROMPT_ID=${AGENT_PROMPT_ID}"
 ENV_VARS="${ENV_VARS},AGENT_ENGINE_ID=${AGENT_ENGINE_ID}"
 ENV_VARS="${ENV_VARS},LOG_LEVEL=${LOG_LEVEL}"
-ENV_VARS="${ENV_VARS},DOCLING_AGENT_URL=${DOCLING_AGENT_URL}"
+if [[ -n "${DOCLING_AGENT_URL:-}" ]]; then
+    ENV_VARS="${ENV_VARS},DOCLING_AGENT_URL=${DOCLING_AGENT_URL}"
+fi
 if [[ -n "${MODEL_NAME:-}" ]]; then
     ENV_VARS="${ENV_VARS},MODEL_NAME=${MODEL_NAME}"
 fi
