@@ -16,7 +16,42 @@ steps:
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
       - '--all-tags'
 
-  # Step 3: Deploy to Cloud Run (resolve service URLs dynamically)
+  # Step 3: Ensure Cloud NAT exists for VPC egress internet access (idempotent)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        ROUTER="${_VPC_ROUTER}"
+        NAT="${_VPC_NAT}"
+        NETWORK="${_VPC_NETWORK}"
+
+        if ! gcloud compute routers describe "$${ROUTER}" \
+            --region=${_REGION} --project=$PROJECT_ID &>/dev/null; then
+          echo "Creating Cloud Router: $${ROUTER}"
+          gcloud compute routers create "$${ROUTER}" \
+            --region=${_REGION} \
+            --network="$${NETWORK}" \
+            --project=$PROJECT_ID
+        else
+          echo "Cloud Router $${ROUTER} already exists"
+        fi
+
+        if ! gcloud compute routers nats describe "$${NAT}" \
+            --router="$${ROUTER}" \
+            --region=${_REGION} --project=$PROJECT_ID &>/dev/null; then
+          echo "Creating Cloud NAT: $${NAT}"
+          gcloud compute routers nats create "$${NAT}" \
+            --router="$${ROUTER}" \
+            --region=${_REGION} \
+            --auto-allocate-nat-external-ips \
+            --nat-all-subnet-ip-ranges \
+            --project=$PROJECT_ID
+        else
+          echo "Cloud NAT $${NAT} already exists"
+        fi
+
+  # Step 4: Deploy to Cloud Run (resolve service URLs dynamically)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
     args:
@@ -64,6 +99,8 @@ substitutions:
   _AGENT_ENGINE_ID: '5316939164761980928'
   _VPC_NETWORK: 'default'
   _VPC_SUBNET: 'default'
+  _VPC_ROUTER: 'nat-router'
+  _VPC_NAT: 'nat-config'
   _LOG_LEVEL: 'INFO'
 
 # Build options
