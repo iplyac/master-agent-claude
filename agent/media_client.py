@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from typing import Optional
 
 from google import genai
 from google.genai import types
@@ -255,6 +256,48 @@ class MediaClient:
                 error_msg,
             )
             raise RuntimeError(f"Image model processing error: {error_msg}") from e
+
+    async def summarize_document(self, content: str) -> Optional[str]:
+        """Generate a brief plain-text summary of extracted document content.
+
+        Args:
+            content: Markdown text extracted from the document.
+
+        Returns:
+            2-4 sentence plain-text summary, or None if content is empty or
+            summarization fails.
+        """
+        if not content:
+            return None
+
+        truncated = content[:30_000]
+
+        try:
+            prompt = (
+                "Below is the text content of a document extracted as markdown. "
+                "Write a brief description (2-4 sentences) in plain text summarising "
+                "what this document is about. Do not use bullet points or headers. "
+                "Output ONLY the summary.\n\n"
+                f"{truncated}"
+            )
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=prompt)],
+                )
+            ]
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+            )
+            summary = response.text.strip()
+            logger.info("Document summary generated: length=%d", len(summary))
+            return summary or None
+
+        except Exception as e:
+            error_msg = mask_token(str(e))
+            logger.warning("Document summarization failed (non-blocking): %s", error_msg)
+            return None
 
     async def close(self) -> None:
         """Close the client (no-op for genai client)."""

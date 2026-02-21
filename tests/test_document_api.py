@@ -33,20 +33,29 @@ def mock_docling_gcs_client():
 
 
 @pytest.fixture
-def app_with_docling(mock_docling_client, mock_docling_gcs_client):
+def mock_media_client():
+    client = MagicMock()
+    client.summarize_document = AsyncMock(return_value="This report covers Q3 financial results.")
+    return client
+
+
+@pytest.fixture
+def app_with_docling(mock_docling_client, mock_docling_gcs_client, mock_media_client):
     from app import app
 
     app.state.docling_client = mock_docling_client
     app.state.docling_gcs_client = mock_docling_gcs_client
+    app.state.media_client = mock_media_client
     return app
 
 
 @pytest.fixture
-def app_without_docling(mock_docling_gcs_client):
+def app_without_docling(mock_docling_gcs_client, mock_media_client):
     from app import app
 
     app.state.docling_client = None
     app.state.docling_gcs_client = mock_docling_gcs_client
+    app.state.media_client = mock_media_client
     return app
 
 
@@ -74,13 +83,42 @@ async def test_document_endpoint_success(app_with_docling, mock_docling_client, 
     assert data["content"] == "# Report\n\nExtracted content"
     assert data["gcs_uri"] == GCS_URI
     assert data["result_gcs_uri"] == RESULT_GCS_URI
+    assert data["summary"] == "This report covers Q3 financial results."
     mock_docling_gcs_client.upload_document.assert_called_once()
     mock_docling_client.process_document.assert_called_once()
 
 
 @pytest.mark.asyncio
+async def test_document_endpoint_summary_null_when_summarization_fails(
+    mock_docling_client, mock_docling_gcs_client
+):
+    """summary is null when media_client.summarize_document returns None."""
+    from app import app
+
+    failing_media_client = MagicMock()
+    failing_media_client.summarize_document = AsyncMock(return_value=None)
+    app.state.docling_client = mock_docling_client
+    app.state.docling_gcs_client = mock_docling_gcs_client
+    app.state.media_client = failing_media_client
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        response = await http.post(
+            "/api/document",
+            json={
+                "conversation_id": "tg_123456",
+                "document_base64": VALID_DOC_BASE64,
+                "mime_type": "application/pdf",
+                "filename": "report.pdf",
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["summary"] is None
+
+
+@pytest.mark.asyncio
 async def test_document_endpoint_success_without_result_gcs_uri(
-    mock_docling_gcs_client,
+    mock_docling_gcs_client, mock_media_client
 ):
     """result_gcs_uri is null when docling agent does not return it."""
     from app import app
@@ -94,6 +132,7 @@ async def test_document_endpoint_success_without_result_gcs_uri(
     )
     app.state.docling_client = client
     app.state.docling_gcs_client = mock_docling_gcs_client
+    app.state.media_client = mock_media_client
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:

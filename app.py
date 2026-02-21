@@ -744,11 +744,16 @@ async def document(request: Request):
     doc_metadata = DocumentMetadata(**raw_metadata) if raw_metadata else None
     result_gcs_uri = result.get("result_gcs_uri")
 
+    # Generate AI summary (non-blocking — failure returns None)
+    media_client: MediaClient = request.app.state.media_client
+    summary = await media_client.summarize_document(content)
+
     return DocumentResponse(
         content=content,
         metadata=doc_metadata,
         gcs_uri=gcs_uri,
         result_gcs_uri=result_gcs_uri,
+        summary=summary,
     ).model_dump()
 
 

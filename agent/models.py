@@ -148,6 +148,7 @@ class DocumentResponse(BaseModel):
     metadata: Optional[DocumentMetadata] = None
     gcs_uri: str
     result_gcs_uri: Optional[str] = None
+    summary: Optional[str] = None
 
 
 class SessionInfoRequest(BaseModel):
