@@ -68,6 +68,10 @@ echo "=== Deploying to Cloud Run ==="
 AGENT_PROMPT_ID="${AGENT_PROMPT_ID:-5914177388295487488}"
 AGENT_ENGINE_ID="${AGENT_ENGINE_ID:-5316939164761980928}"
 
+DOCLING_AGENT_URL="${DOCLING_AGENT_URL:-https://docling-agent-3qblthn7ba-ez.a.run.app}"
+VPC_NETWORK="${VPC_NETWORK:-default}"
+VPC_SUBNET="${VPC_SUBNET:-default}"
+
 ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID}"
 ENV_VARS="${ENV_VARS},GCP_LOCATION=${REGION}"
 ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
@@ -76,6 +80,7 @@ ENV_VARS="${ENV_VARS},GOOGLE_GENAI_USE_VERTEXAI=true"
 ENV_VARS="${ENV_VARS},AGENT_PROMPT_ID=${AGENT_PROMPT_ID}"
 ENV_VARS="${ENV_VARS},AGENT_ENGINE_ID=${AGENT_ENGINE_ID}"
 ENV_VARS="${ENV_VARS},LOG_LEVEL=${LOG_LEVEL}"
+ENV_VARS="${ENV_VARS},DOCLING_AGENT_URL=${DOCLING_AGENT_URL}"
 if [[ -n "${MODEL_NAME:-}" ]]; then
     ENV_VARS="${ENV_VARS},MODEL_NAME=${MODEL_NAME}"
 fi
@@ -90,6 +95,9 @@ gcloud run deploy "${SERVICE_NAME}" \
     --platform=managed \
     --ingress=all \
     --allow-unauthenticated \
+    --network="${VPC_NETWORK}" \
+    --subnet="${VPC_SUBNET}" \
+    --vpc-egress=all-traffic \
     --set-env-vars="${ENV_VARS}" \
     --set-secrets="MODEL_API_KEY=GOOGLE_API_KEY:latest" \
     --quiet
