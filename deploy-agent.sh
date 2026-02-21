@@ -93,8 +93,8 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region="${REGION}" \
     --image="${IMAGE_LATEST}" \
     --platform=managed \
-    --ingress=all \
-    --allow-unauthenticated \
+    --ingress=internal \
+    --no-allow-unauthenticated \
     --network="${VPC_NETWORK}" \
     --subnet="${VPC_SUBNET}" \
     --vpc-egress=all-traffic \
