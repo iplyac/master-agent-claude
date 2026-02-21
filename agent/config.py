@@ -120,3 +120,8 @@ def get_image_model_name() -> str:
 def get_agent_engine_id() -> Optional[str]:
     """Return Agent Engine ID for Vertex AI Sessions and Memory Bank."""
     return os.getenv("AGENT_ENGINE_ID") or None
+
+
+def get_gcs_bucket_name() -> str:
+    """Return GCS bucket name for image storage."""
+    return os.getenv("GCS_BUCKET_NAME") or "master-agent-images"

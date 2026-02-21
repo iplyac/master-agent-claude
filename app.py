@@ -15,6 +15,7 @@ from google.adk.sessions import InMemorySessionService
 from agent.adk_agent import create_agent, load_prompt_from_vertex_ai
 from agent.config import (
     get_agent_engine_id,
+    get_gcs_bucket_name,
     get_image_model_name,
     get_location,
     get_log_level,
@@ -29,6 +30,7 @@ from agent.config import (
 from agent.models import ChatRequest, ImageRequest, SessionInfoRequest, SessionInfoResponse, VoiceRequest
 from agent.processor import MessageProcessor, _sanitize_id
 from agent.media_client import MediaClient
+from agent.gcs_client import GCSStorageClient
 
 # Cloud Trace context variable
 trace_context: ContextVar[str] = ContextVar("trace_context", default="")
@@ -160,8 +162,13 @@ async def lifespan(app: FastAPI):
     logger.info("Image processing model: %s", image_model_name)
     media_client = MediaClient(project_id, location, model_name, image_model_name)
 
+    # Create GCS client for image persistence
+    gcs_bucket = get_gcs_bucket_name()
+    gcs_client = GCSStorageClient(gcs_bucket)
+    logger.info("GCS image storage enabled: bucket=%s", gcs_bucket)
+
     # Create processor with ADK Runner
-    processor = MessageProcessor(runner, session_service, media_client, memory_service)
+    processor = MessageProcessor(runner, session_service, media_client, memory_service, gcs_client)
 
     # Store in app state (mutable for reload support)
     app.state.runner = runner
@@ -173,6 +180,7 @@ async def lifespan(app: FastAPI):
     app.state.project_id = project_id
     app.state.location = location
     app.state.model_name = model_name
+    app.state.gcs_client = gcs_client
 
     yield
 
@@ -275,7 +283,8 @@ async def reload_prompt(request: Request):
             request.app.state.agent = new_agent
             request.app.state.runner = new_runner
             request.app.state.processor = MessageProcessor(
-                new_runner, session_service, request.app.state.media_client, memory_svc
+                new_runner, session_service, request.app.state.media_client, memory_svc,
+                request.app.state.gcs_client,
             )
 
             logger.info("Prompt reloaded successfully: length=%d", len(instruction))

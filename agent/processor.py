@@ -1,5 +1,6 @@
 """Message processor using ADK Runner."""
 
+import base64
 import logging
 import re
 from typing import Optional
@@ -8,6 +9,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService
 from google.genai import types
 
+from agent.gcs_client import GCSStorageClient
 from agent.media_client import MediaClient
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ class MessageProcessor:
         session_service: BaseSessionService,
         media_client: Optional[MediaClient] = None,
         memory_service=None,
+        gcs_client: Optional[GCSStorageClient] = None,
     ):
         """Initialize the processor.
 
@@ -43,11 +46,13 @@ class MessageProcessor:
             session_service: Session service for creating/managing sessions.
             media_client: Optional client for media (voice, image) processing.
             memory_service: Optional memory service for long-term memory.
+            gcs_client: Optional GCS client for persisting images.
         """
         self.runner = runner
         self.session_service = session_service
         self.media_client = media_client
         self.memory_service = memory_service
+        self.gcs_client = gcs_client
         # Cache: conversation_id -> vertex session_id (avoids list_sessions on every message)
         self._session_cache: dict[str, str] = {}
 
@@ -279,6 +284,11 @@ class MessageProcessor:
             }
 
         try:
+            # Save original image to GCS (fire-and-forget)
+            if self.gcs_client:
+                image_bytes = base64.b64decode(image_base64)
+                await self.gcs_client.upload_original(image_bytes, mime_type, conversation_id)
+
             if prompt and self.media_client:
                 # Image + prompt: use Nano Banana Pro model for processing
                 model_result = await self.media_client.process_image_with_model(
@@ -286,6 +296,13 @@ class MessageProcessor:
                 )
 
                 description = model_result["text"]
+
+                # Save processed image to GCS if model returned one (fire-and-forget)
+                if self.gcs_client and model_result["image_base64"] and model_result["image_mime_type"]:
+                    processed_bytes = base64.b64decode(model_result["image_base64"])
+                    await self.gcs_client.upload_processed(
+                        processed_bytes, model_result["image_mime_type"], conversation_id
+                    )
 
                 # Build message for ADK Runner to preserve context
                 message = f"[User sent an image with prompt: {prompt}]\n\nModel response: {description}"
