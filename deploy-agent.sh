@@ -71,6 +71,35 @@ AGENT_ENGINE_ID="${AGENT_ENGINE_ID:-5316939164761980928}"
 DOCLING_AGENT_URL="${DOCLING_AGENT_URL:-https://docling-agent-3qblthn7ba-ez.a.run.app}"
 VPC_NETWORK="${VPC_NETWORK:-default}"
 VPC_SUBNET="${VPC_SUBNET:-default}"
+VPC_ROUTER="${VPC_ROUTER:-nat-router}"
+VPC_NAT="${VPC_NAT:-nat-config}"
+
+# --- Ensure Cloud NAT exists (required for vpc-egress=all-traffic + internet access) ---
+echo "=== Ensuring Cloud NAT exists ==="
+if ! gcloud compute routers describe "${VPC_ROUTER}" \
+    --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+    echo "Creating Cloud Router: ${VPC_ROUTER}"
+    gcloud compute routers create "${VPC_ROUTER}" \
+        --region="${REGION}" \
+        --network="${VPC_NETWORK}" \
+        --project="${PROJECT_ID}"
+else
+    echo "Cloud Router ${VPC_ROUTER} already exists"
+fi
+
+if ! gcloud compute routers nats describe "${VPC_NAT}" \
+    --router="${VPC_ROUTER}" \
+    --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+    echo "Creating Cloud NAT: ${VPC_NAT}"
+    gcloud compute routers nats create "${VPC_NAT}" \
+        --router="${VPC_ROUTER}" \
+        --region="${REGION}" \
+        --auto-allocate-nat-external-ips \
+        --nat-all-subnet-ip-ranges \
+        --project="${PROJECT_ID}"
+else
+    echo "Cloud NAT ${VPC_NAT} already exists"
+fi
 
 ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID}"
 ENV_VARS="${ENV_VARS},GCP_LOCATION=${REGION}"
