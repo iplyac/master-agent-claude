@@ -23,9 +23,12 @@ secret_manager.py       # Google Secret Manager client
 agent/
   adk_agent.py          # ADK Agent factory, Vertex AI prompt loader
   config.py             # Environment variable helpers
+  docling_client.py     # Docling Agent HTTP client
+  gcs_client.py         # GCS operations (image & document storage)
   media_client.py       # Voice transcription & image processing (genai.Client)
   models.py             # Pydantic request/response models
   processor.py          # MessageProcessor — ADK Runner orchestration
+  status_client.py      # Agent status aggregation
 tests/                  # pytest + pytest-asyncio tests
 docs/                   # Integration docs
 ```
@@ -43,10 +46,13 @@ docs/                   # Integration docs
 |--------|--------------------|--------------------------------|
 | GET    | /health            | Health check                   |
 | GET    | /healthz           | Health check (alias)           |
+| GET    | /status            | Service status (version, uptime) |
+| GET    | /api/agents-status | Aggregated status of all connected agents |
 | GET    | /api/prompt        | Get current system prompt      |
 | POST   | /api/chat          | Process text message           |
 | POST   | /api/voice         | Process voice message          |
 | POST   | /api/image         | Process image                  |
+| POST   | /api/document      | Process a document via Docling Agent |
 | POST   | /api/session-info  | Get session information        |
 | POST   | /api/reload-prompt | Reload system prompt           |
 
@@ -269,6 +275,10 @@ Use a standalone terminal application.
 | IMAGE_MODEL_NAME          | No       | gemini-3-pro-image-preview | Model for image generation/editing                |
 | AGENT_PROMPT_ID           | No       | -                        | Vertex AI Prompt dataset ID for dynamic prompt loading |
 | AGENT_ENGINE_ID           | No       | -                        | Agent Engine ID — enables Vertex AI Sessions & Memory Bank |
+| GCS_BUCKET_NAME           | No       | master-agent-images      | GCS bucket for image storage                        |
+| DOCLING_AGENT_URL         | No       | -                        | Docling Agent Cloud Run URL                         |
+| GCS_DOCLING_BUCKET        | No       | docling-documents        | GCS bucket for Docling documents                    |
+| TELEGRAM_BOT_URL          | No       | -                        | Telegram Bot Cloud Run URL (for status aggregation) |
 | REGION                    | No       | europe-west4             | Deployment region                                   |
 | SERVICE_NAME              | No       | ai-agent                 | Service name for logging                            |
 | LOG_LEVEL                 | No       | INFO                     | Logging level                                       |
