@@ -135,3 +135,8 @@ def get_docling_agent_url() -> Optional[str]:
 def get_docling_gcs_bucket() -> str:
     """Return GCS bucket name for docling documents."""
     return os.getenv("GCS_DOCLING_BUCKET") or "docling-documents"
+
+
+def get_telegram_bot_url() -> Optional[str]:
+    """Return Telegram bot Cloud Run URL if configured."""
+    return os.getenv("TELEGRAM_BOT_URL") or None

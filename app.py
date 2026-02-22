@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import pathlib
 import sys
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -27,6 +29,7 @@ from agent.config import (
     get_prompt_id,
     get_region,
     get_service_name,
+    get_telegram_bot_url,
     mask_token,
 )
 from agent.models import (
@@ -195,6 +198,12 @@ async def lifespan(app: FastAPI):
     # Create processor with ADK Runner
     processor = MessageProcessor(runner, session_service, media_client, memory_service, gcs_client)
 
+    app.state.started_at = datetime.now(timezone.utc)
+    try:
+        app.state.version = pathlib.Path("VERSION").read_text().strip()
+    except FileNotFoundError:
+        app.state.version = "unknown"
+
     # Store in app state (mutable for reload support)
     app.state.runner = runner
     app.state.agent = agent
@@ -243,6 +252,32 @@ async def health():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def service_status(request: Request):
+    """Service status endpoint."""
+    uptime = (datetime.now(timezone.utc) - request.app.state.started_at).total_seconds()
+    return {
+        "name": "master-agent",
+        "purpose": "AI orchestrator — processes messages via Google ADK/Gemini, coordinates sub-agents",
+        "version": request.app.state.version,
+        "uptime_seconds": uptime,
+        "status": "ok",
+    }
+
+
+@app.get("/api/agents-status")
+async def agents_status(request: Request):
+    """Aggregate status from all known agents."""
+    from agent.status_client import collect_agents_status
+    agents = await collect_agents_status(
+        telegram_bot_url=get_telegram_bot_url(),
+        docling_agent_url=get_docling_agent_url(),
+        self_version=request.app.state.version,
+        self_started_at=request.app.state.started_at,
+    )
+    return {"agents": agents}
 
 
 @app.get("/api/prompt")
